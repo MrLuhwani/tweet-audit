@@ -1,0 +1,16 @@
+{
+  "criteria": {
+    "forbidden_words": [
+      ""
+    ],
+    "topics_to_exclude": [
+      "Outdated political opinions",
+      "Controversial statements"
+    ],
+    "tone_requirements": [
+      "Professional language only",
+      "No personal attacks or insults"
+    ],
+    "additional_instructions": "Flag any content that could harm professional reputation"
+  }
+}

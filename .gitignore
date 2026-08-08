@@ -35,4 +35,8 @@ build/
 # environmet vars
 .env
 
+# user specific data
+data/
+output/
+
 THOUGHTS.md
