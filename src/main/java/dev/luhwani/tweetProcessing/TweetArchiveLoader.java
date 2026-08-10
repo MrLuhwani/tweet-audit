@@ -18,16 +18,15 @@ import dev.luhwani.model.TweetData;
 public final class TweetArchiveLoader {
 
     private static final String TWEET_ARCHIVE_PATH = "data/tweets.js";
-    private static final String JS_PREFIX = "window.YTD.tweets.part0 =";
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter
             .ofPattern("EEE MMM dd HH:mm:ss Z yyyy", Locale.ENGLISH);
-    private static final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
-    private TweetArchiveLoader() {
-
+    public TweetArchiveLoader(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
     }
 
-    public static List<TweetData> load() throws IOException {
+    public List<TweetData> load() throws IOException {
         Path projectRoot = Paths.get("").toAbsolutePath();
         Path criteriaPath = projectRoot.resolve(TWEET_ARCHIVE_PATH);
         if (!Files.exists(criteriaPath) || !Files.isRegularFile(criteriaPath)) {
@@ -35,6 +34,10 @@ public final class TweetArchiveLoader {
         }
         String rawContent = Files.readString(criteriaPath);
         String jsonContent = stripJavaScriptAssignment(rawContent);
+
+        // this throws an error if the file is invalid json, so even if we successfully
+        // strip the js assignment, but the file itself doesn't have a proper json structure,
+        // it would throw an err
         JsonNode jsonObjs = objectMapper.readTree(jsonContent);
 
         if (!jsonObjs.isArray()) {
@@ -57,6 +60,13 @@ public final class TweetArchiveLoader {
         return List.copyOf(tweets);
     }
 
+    /**
+     * An unmodified {@code tweet.js} file starts with {@code "window.YTD.tweets.part0"}. This method
+     * looks for the first index of a square bracket ('[') that identifies the start of the tweet array
+     * @param tweets
+     * @return tweets in a string format, without the js prefix
+     * @throws IOException
+     */
     private static String stripJavaScriptAssignment(String tweets) throws IOException {
         String trimmed = tweets.stripLeading();
 
