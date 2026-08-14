@@ -4,6 +4,9 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutionException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -12,6 +15,9 @@ import dev.luhwani.configLoader.CriteriaLoader;
 import dev.luhwani.model.Checkpoint;
 import dev.luhwani.model.TweetBatch;
 import dev.luhwani.model.TweetData;
+import dev.luhwani.tweetEvaluation.AiProvider;
+import dev.luhwani.tweetEvaluation.RateLimterScheduler;
+import dev.luhwani.tweetEvaluation.gemini.GeminiAiProvider;
 import dev.luhwani.tweetProcessing.CheckpointResolver;
 import dev.luhwani.tweetProcessing.TweetArchiveLoader;
 import dev.luhwani.tweetProcessing.TweetBatchFactory;
@@ -29,11 +35,12 @@ public final class TweetAuditApp {
     private static final ObjectMapper mapper = new ObjectMapper();
 
     public static void run() {
-
         try {
             AppConfig config = load();
-            processTweets(config);
-        } catch (IOException | InterruptedException | DateTimeParseException e) {
+            List<TweetBatch> tweetBatches = processTweets(config);
+            evaluateTweetBatches(tweetBatches, config);
+        } catch (IOException | InterruptedException | DateTimeParseException | ExecutionException e) {
+            // TODO: use a better error handling strategy
             System.err.println("Tweet processing failed: " + e.getMessage());
             e.printStackTrace(System.err);
             System.exit(1);
@@ -55,10 +62,10 @@ public final class TweetAuditApp {
         return new AppConfig(apiKey, criteria, tweets);
     }
 
-    private static void processTweets(AppConfig config) throws IOException {
-        
+    private static List<TweetBatch> processTweets(AppConfig config) throws IOException {
+
         List<TweetBatch> tweetBatches = TweetBatchFactory.createBatches(config.tweets());
-        
+
         Checkpoint checkpoint = new CheckpointResolver(mapper).load();
         int firstBatch = checkpoint.nextBatchIndex();
 
@@ -72,9 +79,20 @@ public final class TweetAuditApp {
         System.out.printf("Parsed %,d tweets into %,d batches\n", config.tweets().size(), tweetBatches.size());
         if (remainingBatches.isEmpty()) {
             System.out.println("Nothing to process. The checkpoint already covers every batch.");
-            return;
+            return null;
         }
         System.out.printf("Resuming from batch %d; %,d batches remain\n", firstBatch, remainingBatches.size());
+        return remainingBatches;
+    }
+
+    private static void evaluateTweetBatches(List<TweetBatch> tweetBatches, AppConfig config) throws InterruptedException, ExecutionException {
+        BlockingQueue<TweetBatch> tweetQueue = new ArrayBlockingQueue<>(tweetBatches.size());
+        tweetQueue.addAll(tweetBatches);
+        AiProvider provider = new GeminiAiProvider(config.apiKey, config.criteria);
+        try (RateLimterScheduler scheduler = new RateLimterScheduler(provider, tweetQueue)) {
+            scheduler.start();
+            scheduler.awaitCompletion();
+        }
     }
 
 }
