@@ -20,6 +20,14 @@
             <artifactId>jackson-databind</artifactId>
             <version>2.17.2</version>
         </dependency>
+
+        <!-- Google Gen AI SDK for Gemini -->
+        <dependency>
+            <groupId>com.google.genai</groupId>
+            <artifactId>google-genai</artifactId>
+            <version>1.63.0</version>
+            <scope>compile</scope>
+        </dependency>
     </dependencies>
 
     <build>

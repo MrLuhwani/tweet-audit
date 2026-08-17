@@ -1,47 +1,54 @@
 package dev.luhwani.tweetEvaluation;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.luhwani.model.TweetBatch;
 
 public abstract class AiProvider {
 
-    protected final Duration intervalMillis;
-    private final String apiKey;
-    private final Path criteria;
+    protected final ObjectMapper mapper;
+    protected final Duration requestInterval;
+    protected final String apiKey;
+    protected final JsonNode criteriaNode;
 
-    protected AiProvider(String apiKey, Path criteria) {
+    protected AiProvider(String apiKey, Path criteria, ObjectMapper mapper) throws IOException {
 
-        long millis = defineIntervalMillis();
+        long millis = definerequestInterval();
         if (millis <= 0) {
             throw new IllegalArgumentException("Provider interval set to " + millis + ". Must be greater than zero");
         }
+        this.mapper = mapper;
 
-        this.intervalMillis = Duration.ofMillis(millis);
+        this.requestInterval = Duration.ofMillis(millis);
         this.apiKey = apiKey;
-        this.criteria = criteria;
+        this.criteriaNode = mapper.readTree(Files.readString(criteria));
     }
 
     public String getApiKey() {
         return apiKey;
     }
 
-    public Path getCriteria() {
-        return criteria;
+    public JsonNode getCriteria() {
+        return criteriaNode;
     }
 
-    public abstract void analyze(TweetBatch batch);
+    public abstract void analyze(TweetBatch batch) throws IOException;
 
-    public Duration getIntervalMillis() {
-        return intervalMillis;
+    public Duration getrequestInterval() {
+        return requestInterval;
     }
 
     /**
-     * each @link AiProvider implementation must provide it's own number of
+     * each {@link AiProvider} implementation must provide it's own number of
      * milliseconds for request intervals
      * 
      * @return millis
      */
-    protected abstract long defineIntervalMillis();
+    protected abstract long definerequestInterval();
 }

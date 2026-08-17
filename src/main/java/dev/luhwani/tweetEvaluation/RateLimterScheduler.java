@@ -1,6 +1,8 @@
 package dev.luhwani.tweetEvaluation;
 
+import java.io.IOException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -21,7 +23,7 @@ public final class RateLimterScheduler implements AutoCloseable {
 
     public RateLimterScheduler(AiProvider provider, BlockingQueue<TweetBatch> queue) {
         this.provider = provider;
-        this.interval = provider.getIntervalMillis();
+        this.interval = provider.getrequestInterval();
         this.retryAfter = Duration.ZERO;
         this.queue = queue;
     }
@@ -41,14 +43,18 @@ public final class RateLimterScheduler implements AutoCloseable {
         task.get();
     }
 
-    private Object runLoop() throws InterruptedException {
+    private Object runLoop() throws InterruptedException, IOException {
         while (running) {
             canMakeRequest();
             TweetBatch batch = queue.poll();
             if (batch == null) {
                 break;
             }
+            Instant start = Instant.now();
+            // TODO: remove this once you figure out the average time requests are made
+            System.out.println("batch" + batch.batchIndex() + ": "+ start);
             provider.analyze(batch);
+            System.out.println("Time: " + Duration.between(start, Instant.now()));
         }
         return null;
 

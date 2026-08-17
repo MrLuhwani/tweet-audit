@@ -10,7 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public final class CriteriaLoader {
 
     private static final String DEFAULT_CRITERIA_PATH = "config.example.json";
-    private static final String CRITERIA_PATH = "criteria.js";
+    private static final String CRITERIA_PATH = "criteria.json";
     private final ObjectMapper objectMapper;
 
     public CriteriaLoader(ObjectMapper objectMapper) {

@@ -21,8 +21,6 @@ import dev.luhwani.tweetEvaluation.gemini.GeminiAiProvider;
 import dev.luhwani.tweetProcessing.CheckpointResolver;
 import dev.luhwani.tweetProcessing.TweetArchiveLoader;
 import dev.luhwani.tweetProcessing.TweetBatchFactory;
-import dev.luhwani.tweetProcessing.TweetFilter;
-import dev.luhwani.tweetProcessing.TweetSorter;
 
 public final class TweetAuditApp {
 
@@ -36,6 +34,7 @@ public final class TweetAuditApp {
 
     public static void run() {
         try {
+            System.out.println("---------Tweet Audit App---------");
             AppConfig config = load();
             List<TweetBatch> tweetBatches = processTweets(config);
             evaluateTweetBatches(tweetBatches, config);
@@ -57,8 +56,6 @@ public final class TweetAuditApp {
         String apiKey = ApiKeyLoader.load();
         Path criteria = new CriteriaLoader(mapper).load();
         List<TweetData> tweets = new TweetArchiveLoader(mapper).load();
-        tweets = TweetFilter.removeRetweets(tweets);
-        tweets = TweetSorter.sort(tweets);
         return new AppConfig(apiKey, criteria, tweets);
     }
 
@@ -85,10 +82,10 @@ public final class TweetAuditApp {
         return remainingBatches;
     }
 
-    private static void evaluateTweetBatches(List<TweetBatch> tweetBatches, AppConfig config) throws InterruptedException, ExecutionException {
+    private static void evaluateTweetBatches(List<TweetBatch> tweetBatches, AppConfig config) throws InterruptedException, ExecutionException, IOException {
         BlockingQueue<TweetBatch> tweetQueue = new ArrayBlockingQueue<>(tweetBatches.size());
         tweetQueue.addAll(tweetBatches);
-        AiProvider provider = new GeminiAiProvider(config.apiKey, config.criteria);
+        AiProvider provider = new GeminiAiProvider(config.apiKey, config.criteria, mapper);
         try (RateLimterScheduler scheduler = new RateLimterScheduler(provider, tweetQueue)) {
             scheduler.start();
             scheduler.awaitCompletion();

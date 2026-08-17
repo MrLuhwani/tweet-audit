@@ -4,11 +4,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,8 +15,6 @@ import dev.luhwani.model.TweetData;
 public final class TweetArchiveLoader {
 
     private static final String TWEET_ARCHIVE_PATH = "data/tweets.js";
-    private static final DateTimeFormatter FORMATTER = DateTimeFormatter
-            .ofPattern("EEE MMM dd HH:mm:ss Z yyyy", Locale.ENGLISH);
     private final ObjectMapper objectMapper;
 
     public TweetArchiveLoader(ObjectMapper objectMapper) {
@@ -50,10 +45,8 @@ public final class TweetArchiveLoader {
             JsonNode tweetNode = obj.path("tweet");
             String id = nullableText(tweetNode, "id_str");
             String text = nullableText(tweetNode, "full_text");
-            String date = nullableText(tweetNode, "created_at");
-            if (id != null && text != null && date != null) {
-                ZonedDateTime dateTime = ZonedDateTime.parse(date, FORMATTER);
-                tweets.add(new TweetData(id, text, dateTime));
+            if (id != null && text != null) {
+                tweets.add(new TweetData(id, text));
             }
         }
 
