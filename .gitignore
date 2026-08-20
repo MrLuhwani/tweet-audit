@@ -37,6 +37,6 @@ build/
 
 # user specific data
 data/
-output/
+/output/
 
 THOUGHTS.md

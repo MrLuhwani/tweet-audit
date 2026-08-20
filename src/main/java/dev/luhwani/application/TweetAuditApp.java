@@ -7,14 +7,20 @@ import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingDeque;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.luhwani.configLoader.ApiKeyLoader;
 import dev.luhwani.configLoader.CriteriaLoader;
+import dev.luhwani.model.AnalysisResult;
 import dev.luhwani.model.Checkpoint;
+import dev.luhwani.model.QueueEvent;
 import dev.luhwani.model.TweetBatch;
 import dev.luhwani.model.TweetData;
+import dev.luhwani.output.CsvWriter;
 import dev.luhwani.tweetEvaluation.AiProvider;
 import dev.luhwani.tweetEvaluation.RateLimterScheduler;
 import dev.luhwani.tweetEvaluation.gemini.GeminiAiProvider;
@@ -82,13 +88,30 @@ public final class TweetAuditApp {
         return remainingBatches;
     }
 
-    private static void evaluateTweetBatches(List<TweetBatch> tweetBatches, AppConfig config) throws InterruptedException, ExecutionException, IOException {
-        BlockingQueue<TweetBatch> tweetQueue = new ArrayBlockingQueue<>(tweetBatches.size());
-        tweetQueue.addAll(tweetBatches);
+    private static void evaluateTweetBatches(List<TweetBatch> tweetBatches, AppConfig config)
+            throws InterruptedException, ExecutionException, IOException {
+        BlockingQueue<QueueEvent<TweetBatch>> tweetQueue = new ArrayBlockingQueue<>(tweetBatches.size() + 1);;
+        BlockingQueue<QueueEvent<AnalysisResult>> resultQueue = new LinkedBlockingDeque<>();
+        for (int i = 0; i < tweetBatches.size(); i++) {
+            tweetQueue.put(new QueueEvent.Item<>(tweetBatches.get(i)));
+        }
+        tweetQueue.put(new QueueEvent.End<TweetBatch>());
         AiProvider provider = new GeminiAiProvider(config.apiKey, config.criteria, mapper);
-        try (RateLimterScheduler scheduler = new RateLimterScheduler(provider, tweetQueue)) {
+        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+        
+        try (RateLimterScheduler scheduler = new RateLimterScheduler(provider, tweetQueue, resultQueue, executor);
+                CsvWriter writer = new CsvWriter(resultQueue, executor);) {
             scheduler.start();
+            writer.start();
             scheduler.awaitCompletion();
+            writer.awaitCompletion();
+        } catch (Exception e) {
+            System.err.println(e.getMessage());
+            System.err.println(e.getClass());
+            e.printStackTrace();
+            executor.shutdown();
+        } finally {
+            executor.shutdown();
         }
     }
 

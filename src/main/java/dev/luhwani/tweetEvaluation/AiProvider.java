@@ -8,6 +8,7 @@ import java.time.Duration;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import dev.luhwani.model.AnalysisResult;
 import dev.luhwani.model.TweetBatch;
 
 public abstract class AiProvider {
@@ -16,6 +17,7 @@ public abstract class AiProvider {
     protected final Duration requestInterval;
     protected final String apiKey;
     protected final JsonNode criteriaNode;
+    protected final int maxAttempts = 5;
 
     protected AiProvider(String apiKey, Path criteria, ObjectMapper mapper) throws IOException {
 
@@ -38,7 +40,7 @@ public abstract class AiProvider {
         return criteriaNode;
     }
 
-    public abstract void analyze(TweetBatch batch) throws IOException;
+    public abstract AnalysisResult analyze(TweetBatch batch) throws IOException;
 
     public Duration getrequestInterval() {
         return requestInterval;

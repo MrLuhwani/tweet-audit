@@ -12,6 +12,7 @@ import com.google.genai.Client;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
 
+import dev.luhwani.model.AnalysisResult;
 import dev.luhwani.model.TweetBatch;
 import dev.luhwani.model.TweetData;
 import dev.luhwani.tweetEvaluation.AiProvider;
@@ -38,7 +39,7 @@ public class GeminiAiProvider extends AiProvider {
     }
 
     @Override
-    public void analyze(TweetBatch batch) throws IOException {
+    public AnalysisResult analyze(TweetBatch batch) throws IOException {
 
         String prompt = buildPrompt(batch, criteriaNode);
 
@@ -47,7 +48,8 @@ public class GeminiAiProvider extends AiProvider {
                 prompt,
                 requestConfig);
 
-        System.out.println(response.text());
+        String jsonResponse = response.text();
+        return mapper.readValue(jsonResponse, AnalysisResult.class);
     }
 
     private String buildPrompt(TweetBatch batch,
