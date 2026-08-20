@@ -20,11 +20,11 @@ import dev.luhwani.model.Checkpoint;
 import dev.luhwani.model.QueueEvent;
 import dev.luhwani.model.TweetBatch;
 import dev.luhwani.model.TweetData;
+import dev.luhwani.output.CheckpointResolver;
 import dev.luhwani.output.CsvWriter;
 import dev.luhwani.tweetEvaluation.AiProvider;
 import dev.luhwani.tweetEvaluation.RateLimterScheduler;
 import dev.luhwani.tweetEvaluation.gemini.GeminiAiProvider;
-import dev.luhwani.tweetProcessing.CheckpointResolver;
 import dev.luhwani.tweetProcessing.TweetArchiveLoader;
 import dev.luhwani.tweetProcessing.TweetBatchFactory;
 
@@ -69,7 +69,7 @@ public final class TweetAuditApp {
 
         List<TweetBatch> tweetBatches = TweetBatchFactory.createBatches(config.tweets());
 
-        Checkpoint checkpoint = new CheckpointResolver(mapper).load();
+        Checkpoint checkpoint = CheckpointResolver.load();
         int firstBatch = checkpoint.nextBatchIndex();
 
         if (firstBatch > tweetBatches.size()) {

@@ -93,6 +93,7 @@ public class CsvWriter implements AutoCloseable {
                             writer.newLine();
                         }
                         writer.flush();
+                        CheckpointResolver.save(result.batchIndex(), result.results().getLast().tweetId());
                     }
                     case QueueEvent.End<AnalysisResult>() -> {
                         return;
