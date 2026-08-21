@@ -14,6 +14,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
 import dev.luhwani.model.AnalysisResult;
+import dev.luhwani.model.Checkpoint;
 import dev.luhwani.model.QueueEvent;
 import dev.luhwani.model.TweetDecision;
 
@@ -27,7 +28,7 @@ public class CsvWriter implements AutoCloseable {
             .toAbsolutePath()
             .normalize()
             .resolve("output/output.csv");
-    private static final String CSV_HEADER = "\"tweet_link\",\"decision\"";
+    private static final String CSV_HEADER = "\"tweet_link\",\"decision\",\"reason\"";
 
     public CsvWriter(BlockingQueue<QueueEvent<AnalysisResult>> queue, ExecutorService executor) throws IOException {
         this.queue = queue;
@@ -40,6 +41,10 @@ public class CsvWriter implements AutoCloseable {
         }
 
         if (Files.notExists(outputPath)) {
+
+            if (CheckpointResolver.load().lastCompletedBatchIndex() != Checkpoint.empty().lastCompletedBatchIndex()) {
+                throw new IllegalStateException("[ERROR] Checkpoint exists, but output.csv file not found");
+            }
             Files.writeString(
                     outputPath,
                     CSV_HEADER + System.lineSeparator(),
@@ -65,7 +70,7 @@ public class CsvWriter implements AutoCloseable {
                         StandardOpenOption.WRITE,
                         StandardOpenOption.APPEND);
             } else {
-                throw new IllegalStateException("Output file is invalid");
+                throw new IllegalStateException("[ERROR] Output file is invalid");
             }
         }
     }
@@ -90,6 +95,8 @@ public class CsvWriter implements AutoCloseable {
                             writer.write("https://x.com/i/status/" + decision.tweetId());
                             writer.write(",");
                             writer.write(decision.decision().name());
+                            writer.write(",");
+                            writer.write(cleanForCsv(decision.reason()));
                             writer.newLine();
                         }
                         writer.flush();
@@ -101,10 +108,10 @@ public class CsvWriter implements AutoCloseable {
                 }
             }
         } catch (IOException | InterruptedException e) {
-            System.err.println(e.getMessage());
+            System.err.println("[ERROR] " + e.getMessage());
             e.printStackTrace();
         } catch (Exception e) {
-            System.err.println(e.getMessage());
+            System.err.println("[ERROR] " + e.getMessage());
             System.err.println(e.getClass());
             e.printStackTrace();
         } finally {
@@ -118,6 +125,36 @@ public class CsvWriter implements AutoCloseable {
             throw new IllegalStateException("Provider has not been started");
         }
         task.get();
+    }
+
+    private static String cleanForCsv(String input) {
+        
+        if (input == null) {
+            return "";
+        }
+
+        String cleaned = input.trim();
+
+        cleaned = removeControlCharacters(cleaned);
+
+        cleaned = cleaned.replace("\"", "\"\"");
+
+        if (needsQuoting(cleaned)) {
+            cleaned = "\"" + cleaned + "\"";
+        }
+
+        return cleaned;
+    }
+
+    private static String removeControlCharacters(String value) {
+        return value
+                .replace("\r\n", " ")  // Windows line ending
+                .replace("\n", " ")    // Unix line ending
+                .replace("\r", " ");    // Old Mac line ending
+    }
+
+    private static boolean needsQuoting(String value) {
+        return value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r");
     }
 
     @Override
