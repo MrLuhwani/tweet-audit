@@ -62,7 +62,7 @@ public final class RateLimterScheduler implements AutoCloseable {
                 }
             }
         } catch (Exception e) {
-            System.err.println(e.getMessage());
+            System.err.println("[ERROR] " + e.getMessage());
             System.err.println(e.getClass());
             e.printStackTrace();
         } finally {

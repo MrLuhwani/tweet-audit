@@ -46,12 +46,12 @@ public final class TweetAuditApp {
             evaluateTweetBatches(tweetBatches, config);
         } catch (IOException | InterruptedException | DateTimeParseException | ExecutionException e) {
             // TODO: use a better error handling strategy
-            System.err.println("Tweet processing failed: " + e.getMessage());
+            System.err.println("[ERROR] Tweet processing failed: " + e.getMessage());
             e.printStackTrace(System.err);
             System.exit(1);
         } catch (Exception e) {
             System.err.println(e.getClass());
-            System.err.println("Tweet processing failed: " + e.getMessage());
+            System.err.println("[ERROR] Tweet processing failed: " + e.getMessage());
             e.printStackTrace(System.err);
             System.exit(1);
         }
@@ -106,7 +106,7 @@ public final class TweetAuditApp {
             scheduler.awaitCompletion();
             writer.awaitCompletion();
         } catch (Exception e) {
-            System.err.println(e.getMessage());
+            System.err.println("[ERROR] " + e.getMessage());
             System.err.println(e.getClass());
             e.printStackTrace();
             executor.shutdown();

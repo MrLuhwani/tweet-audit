@@ -7,10 +7,10 @@ public record TweetBatch(
         List<TweetData> tweets) {
     public TweetBatch(int batchIndex, List<TweetData> tweets) {
         if (batchIndex < 0) {
-            throw new IllegalArgumentException("Batch index cannot be negative");
+            throw new IllegalArgumentException("[ERROR] Batch index cannot be negative");
         }
         if (tweets == null || tweets.isEmpty()) {
-            throw new IllegalArgumentException("A batch cannot be empty");
+            throw new IllegalArgumentException("[ERROR] A batch cannot be empty");
         }
         this.batchIndex = batchIndex;
         this.tweets = List.copyOf(tweets);

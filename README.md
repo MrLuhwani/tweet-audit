@@ -63,11 +63,20 @@ mvn compile exec:java
 
 - When the tool is reloaded, it checks the checkpoint file, and continues from where it stopped
 
+An example of how the output folder looks like
+```csv
+"tweet_link","decision","reason"
+https://x.com/i/status/1111111111111111111,KEEP,"Polite and casual conversation, complies with all criteria."
+https://x.com/i/status/1223456765434565643,KEEP,Normal bug report / product feedback tweet.
+https://x.com/i/status/1236464576879898865,DELETE,"Mentions Web3, which is included in topics_to_exclude."
+https://x.com/i/status/2838488457757477382,KEEP,Harmless personal thought.
+```
+
+
 ## Roadmap
 
 The current implementation is an MVP. These are other features I plan to implement:
 
-- Add a reason column for Gemini to show why a tweet was deleted/kept
 - Move from sequential to better concurrent implementations
 - Add better error handling strategies and logging
 - Add appropriate tests for the project

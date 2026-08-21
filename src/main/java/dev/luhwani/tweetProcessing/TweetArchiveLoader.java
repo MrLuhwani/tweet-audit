@@ -25,7 +25,7 @@ public final class TweetArchiveLoader {
         Path projectRoot = Paths.get("").toAbsolutePath();
         Path criteriaPath = projectRoot.resolve(TWEET_ARCHIVE_PATH);
         if (!Files.exists(criteriaPath) || !Files.isRegularFile(criteriaPath)) {
-            throw new IOException("Tweet archive not found at path: " + TWEET_ARCHIVE_PATH);
+            throw new IOException("[ERROR] Tweet archive not found at path: " + TWEET_ARCHIVE_PATH);
         }
         String rawContent = Files.readString(criteriaPath);
         String jsonContent = stripJavaScriptAssignment(rawContent);
@@ -36,7 +36,7 @@ public final class TweetArchiveLoader {
         JsonNode jsonObjs = objectMapper.readTree(jsonContent);
 
         if (!jsonObjs.isArray()) {
-            throw new IOException("Expected the tweet archive jsonObjs to be a JSON array");
+            throw new IOException("[ERROR] Expected the tweet archive jsonObjs to be a JSON array");
         }
 
         List<TweetData> tweets = new ArrayList<>();
@@ -70,7 +70,7 @@ public final class TweetArchiveLoader {
         int arrayStart = trimmed.indexOf('[');
 
         if (arrayStart < 0) {
-            throw new IOException("Could not find the JSON array in the tweets archive");
+            throw new IOException("[ERROR] Could not find the JSON array in the tweets archive");
         }
 
         return trimmed.substring(arrayStart);

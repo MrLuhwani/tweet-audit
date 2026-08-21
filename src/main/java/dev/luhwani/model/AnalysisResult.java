@@ -10,10 +10,10 @@ public record AnalysisResult(
 
         public AnalysisResult(int batchIndex, List<TweetDecision> results) {
                 if (batchIndex < 0) {
-                        throw new IllegalArgumentException("Batch index cannot be negative");
+                        throw new IllegalArgumentException("[ERROR] Batch index cannot be negative");
                 }
                 if (results == null || results.isEmpty()) {
-                        throw new IllegalArgumentException("A batch cannot be empty");
+                        throw new IllegalArgumentException("[ERROR] A batch cannot be empty");
                 }
                 this.batchIndex = batchIndex;
                 this.results = List.copyOf(results);

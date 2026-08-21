@@ -81,6 +81,7 @@ public class GeminiAiProvider extends AiProvider {
                 2. decision must be either KEEP or DELETE.
                 3. Never invent tweet ids.
                 4. Preserve tweet ordering.
+                5. Gve reasons for your decision
                 Deletion Criteria:
                 %s
                 Tweet Batch:
@@ -125,27 +126,32 @@ public class GeminiAiProvider extends AiProvider {
 
         decision.set("enum", enums);
 
+        ObjectNode reason = mapper.createObjectNode();
+        reason.put("type", "string");
+
         itemProps.set("tweet_id", tweetId);
         itemProps.set("decision", decision);
+        itemProps.set("reason", reason);
 
         item.set("properties", itemProps);
 
         ArrayNode reqItem = mapper.createArrayNode();
         reqItem.add("tweet_id");
         reqItem.add("decision");
+        reqItem.add("reason");
 
         item.set("required", reqItem);
 
-        results.set("items", item);
+        results.set("items", item); 
 
         props.set("batch_index", batchIndex);
-        props.set("results", results);
+        props.set("results", results); 
 
         schema.set("properties", props);
 
         ArrayNode req = mapper.createArrayNode();
         req.add("batch_index");
-        req.add("results");
+        req.add("results"); 
 
         schema.set("required", req);
 
