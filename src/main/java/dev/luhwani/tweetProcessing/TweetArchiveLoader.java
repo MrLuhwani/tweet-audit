@@ -24,8 +24,12 @@ public final class TweetArchiveLoader {
     public List<TweetData> load() throws IOException {
         Path projectRoot = Paths.get("").toAbsolutePath();
         Path criteriaPath = projectRoot.resolve(TWEET_ARCHIVE_PATH);
-        if (!Files.exists(criteriaPath) || !Files.isRegularFile(criteriaPath)) {
-            throw new IOException("[ERROR] Tweet archive not found at path: " + TWEET_ARCHIVE_PATH);
+        if (!Files.exists(criteriaPath)) {
+            throw new IOException("Tweet archive not found at path: " + TWEET_ARCHIVE_PATH);
+        }
+
+        if (!Files.isRegularFile(criteriaPath)) {
+            throw new IOException("Could not read tweet data at: " + TWEET_ARCHIVE_PATH);
         }
         String rawContent = Files.readString(criteriaPath);
         String jsonContent = stripJavaScriptAssignment(rawContent);
@@ -33,20 +37,29 @@ public final class TweetArchiveLoader {
         // this throws an error if the file is invalid json, so even if we successfully
         // strip the js assignment, but the file itself doesn't have a proper json structure,
         // it would throw an err
-        JsonNode jsonObjs = objectMapper.readTree(jsonContent);
+        JsonNode jsonArray = objectMapper.readTree(jsonContent);
 
-        if (!jsonObjs.isArray()) {
-            throw new IOException("[ERROR] Expected the tweet archive jsonObjs to be a JSON array");
+        if (!jsonArray.isArray()) {
+            throw new IOException("Expected an array of tweets but array not found. ");
+        }
+        
+        if (jsonArray.isEmpty()) {
+        	throw new IOException("Empty array found at " + TWEET_ARCHIVE_PATH);
         }
 
         List<TweetData> tweets = new ArrayList<>();
-        for (JsonNode obj : jsonObjs) {
-
-            JsonNode tweetNode = obj.path("tweet");
+        for (JsonNode obj : jsonArray) {
+            JsonNode tweetNode = obj.get("tweet");
             String id = nullableText(tweetNode, "id_str");
+            // Fallback to "id" if "id_str" isn't present
+            if (id == null) {
+                id = nullableText(tweetNode, "id");
+            }
             String text = nullableText(tweetNode, "full_text");
             if (id != null && text != null) {
                 tweets.add(new TweetData(id, text));
+            } else {
+            	System.out.println("[WARN] Tweet missing id or text: " + obj);
             }
         }
 
@@ -70,13 +83,16 @@ public final class TweetArchiveLoader {
         int arrayStart = trimmed.indexOf('[');
 
         if (arrayStart < 0) {
-            throw new IOException("[ERROR] Could not find the JSON array in the tweets archive");
+            throw new IOException("Could not find the JSON array in the tweets archive");
         }
 
         return trimmed.substring(arrayStart);
     }
 
     private static String nullableText(JsonNode node, String field) {
+        if (node == null) {
+            return null;
+        }
         JsonNode value = node.get(field);
         if (value == null || value.isNull()) {
             return null;

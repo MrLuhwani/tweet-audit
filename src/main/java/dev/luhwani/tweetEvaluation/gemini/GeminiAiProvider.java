@@ -52,48 +52,33 @@ public class GeminiAiProvider extends AiProvider {
         return mapper.readValue(jsonResponse, AnalysisResult.class);
     }
 
-    private String buildPrompt(TweetBatch batch,
-            JsonNode criteria) throws JsonProcessingException {
+    private String buildPrompt(TweetBatch batch, JsonNode criteria) throws JsonProcessingException {
 
-        ObjectNode batchJson = mapper.createObjectNode();
+    ObjectNode batchJson = mapper.createObjectNode();
 
-        batchJson.put("batch_index", batch.batchIndex());
+    batchJson.put("batch_index", batch.batchIndex());
 
-        ArrayNode tweets = mapper.createArrayNode();
+    ArrayNode tweets = mapper.createArrayNode();
 
-        for (TweetData tweet : batch.tweets()) {
+    for (TweetData tweet : batch.tweets()) {
 
-            ObjectNode t = mapper.createObjectNode();
+        ObjectNode t = mapper.createObjectNode();
 
-            t.put("id", tweet.id());
-            t.put("text", tweet.text());
+        t.put("id", tweet.id());
+        t.put("text", tweet.text());
 
-            tweets.add(t);
-        }
-
-        batchJson.set("tweets", tweets);
-
-        return """
-                Evaluate every tweet against the supplied deletion criteria.
-
-                Rules:
-                1. Produce exactly one result for every tweet.
-                2. decision must be either KEEP or DELETE.
-                3. Never invent tweet ids.
-                4. Preserve tweet ordering.
-                5. Gve reasons for your decision
-                Deletion Criteria:
-                %s
-                Tweet Batch:
-                %s
-                """
-                .formatted(
-                        mapper.writerWithDefaultPrettyPrinter()
-                                .writeValueAsString(criteria),
-
-                        mapper.writerWithDefaultPrettyPrinter()
-                                .writeValueAsString(batchJson));
+        tweets.add(t);
     }
+
+    batchJson.set("tweets", tweets);
+
+    return String.format(
+        "Evaluate every tweet against the supplied deletion criteria. \n Rules: \n 1. Produce exactly one result for every tweet. \n 2. decision must be either KEEP or DELETE. \n 3. Never invent tweet ids. \n 4. Preserve tweet ordering. \n 5. Give reasons for your decision \n Deletion Criteria: \n %s \n Tweet Batch: \n %s \n",
+        mapper.writerWithDefaultPrettyPrinter().writeValueAsString(criteria),
+        mapper.writerWithDefaultPrettyPrinter().writeValueAsString(batchJson)
+    );
+}
+
 
     private GenerateContentConfig buildConfig() {
 

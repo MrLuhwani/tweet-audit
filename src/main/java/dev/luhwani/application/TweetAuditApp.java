@@ -10,6 +10,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
+import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -23,96 +24,108 @@ import dev.luhwani.model.TweetData;
 import dev.luhwani.output.CheckpointResolver;
 import dev.luhwani.output.CsvWriter;
 import dev.luhwani.tweetEvaluation.AiProvider;
-import dev.luhwani.tweetEvaluation.RateLimterScheduler;
+import dev.luhwani.tweetEvaluation.RateLimiterScheduler;
 import dev.luhwani.tweetEvaluation.gemini.GeminiAiProvider;
 import dev.luhwani.tweetProcessing.TweetArchiveLoader;
 import dev.luhwani.tweetProcessing.TweetBatchFactory;
 
 public final class TweetAuditApp {
 
-    record AppConfig(
-            String apiKey,
-            Path criteria,
-            List<TweetData> tweets) {
-    }
+	private TweetAuditApp(){}
 
-    private static final ObjectMapper mapper = new ObjectMapper();
+	private final class AppConfig {
+		private final String apiKey;
+		private final Path criteria;
+		private final List<TweetData> tweets;
 
-    public static void run() {
-        try {
-            System.out.println("---------Tweet Audit App---------");
-            AppConfig config = load();
-            List<TweetBatch> tweetBatches = processTweets(config);
-            evaluateTweetBatches(tweetBatches, config);
-        } catch (IOException | InterruptedException | DateTimeParseException | ExecutionException e) {
-            // TODO: use a better error handling strategy
-            System.err.println("[ERROR] Tweet processing failed: " + e.getMessage());
-            e.printStackTrace(System.err);
-            System.exit(1);
-        } catch (Exception e) {
-            System.err.println(e.getClass());
-            System.err.println("[ERROR] Tweet processing failed: " + e.getMessage());
-            e.printStackTrace(System.err);
-            System.exit(1);
-        }
+		AppConfig(
+			String apiKey,
+			Path criteria,
+			List<TweetData> tweets) {
+			this.apiKey = apiKey;
+			this.criteria = criteria;
+			this.tweets = tweets;
+		}
+	}
 
-    }
+	private static final ObjectMapper mapper = new ObjectMapper();
+	public static void run() {
+		try {
+			System.out.println("----------Tweet Audit App----------");
+			AppConfig config = load();
+			List<TweetBatch> tweetBatches = processTweets(config);
+			evaluateTweetBatches(tweetBatches, config);
+		} catch (IllegalStateException | IOException | InterruptedException | DateTimeParseException | ExecutionException e) {
+			// TODO: use a better error handling strategy
+			System.err.println("[ERROR] Tweet processing failed: " + e.getMessage());
+			e.printStackTrace(System.err);
+			System.exit(1);
+		} catch (Exception e) {
+			System.err.println(e.getClass());
+			System.err.println("[ERROR] Tweet processing failed: " + e.getMessage());
+			e.printStackTrace(System.err);
+			System.exit(1);
+		}
 
-    private static AppConfig load() throws IOException, InterruptedException, DateTimeParseException {
-        String apiKey = ApiKeyLoader.load();
-        Path criteria = new CriteriaLoader(mapper).load();
-        List<TweetData> tweets = new TweetArchiveLoader(mapper).load();
-        return new AppConfig(apiKey, criteria, tweets);
-    }
+	}
 
-    private static List<TweetBatch> processTweets(AppConfig config) throws IOException {
+	private static AppConfig load() throws IOException, InterruptedException, DateTimeParseException {
+		String apiKey = ApiKeyLoader.load();
+		Path criteria = new CriteriaLoader(mapper).load();
+		List<TweetData> tweets = new TweetArchiveLoader(mapper).load();
+		TweetAuditApp app = new TweetAuditApp();
+		TweetAuditApp.AppConfig config = app.new AppConfig(apiKey, criteria, tweets);
+		return config;
+	}
 
-        List<TweetBatch> tweetBatches = TweetBatchFactory.createBatches(config.tweets());
+	private static List<TweetBatch> processTweets(AppConfig config) throws IOException {
 
-        Checkpoint checkpoint = CheckpointResolver.load();
-        int firstBatch = checkpoint.nextBatchIndex();
+		List<TweetBatch> tweetBatches = TweetBatchFactory.createBatches(config.tweets);
 
-        if (firstBatch > tweetBatches.size()) {
-            throw new IllegalStateException("Checkpoint is ahead of the available tweet batches");
-        }
+		Checkpoint checkpoint = CheckpointResolver.load();
+		int firstBatch = checkpoint.nextBatchIndex();
 
-        List<TweetBatch> remainingBatches = tweetBatches.stream()
-                .filter(batch -> batch.batchIndex() >= firstBatch)
-                .toList();
-        System.out.printf("Parsed %,d tweets into %,d batches\n", config.tweets().size(), tweetBatches.size());
-        if (remainingBatches.isEmpty()) {
-            System.out.println("Nothing to process. The checkpoint already covers every batch.");
-            return null;
-        }
-        System.out.printf("Resuming from batch %d; %,d batches remain\n", firstBatch, remainingBatches.size());
-        return remainingBatches;
-    }
+		if (firstBatch > tweetBatches.size()) {
+			throw new IllegalStateException("Checkpoint is ahead of the available tweet batches");
+		}
 
-    private static void evaluateTweetBatches(List<TweetBatch> tweetBatches, AppConfig config)
-            throws InterruptedException, ExecutionException, IOException {
-        BlockingQueue<QueueEvent<TweetBatch>> tweetQueue = new ArrayBlockingQueue<>(tweetBatches.size() + 1);;
-        BlockingQueue<QueueEvent<AnalysisResult>> resultQueue = new LinkedBlockingDeque<>();
-        for (int i = 0; i < tweetBatches.size(); i++) {
-            tweetQueue.put(new QueueEvent.Item<>(tweetBatches.get(i)));
-        }
-        tweetQueue.put(new QueueEvent.End<TweetBatch>());
-        AiProvider provider = new GeminiAiProvider(config.apiKey, config.criteria, mapper);
-        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-        
-        try (RateLimterScheduler scheduler = new RateLimterScheduler(provider, tweetQueue, resultQueue, executor);
-                CsvWriter writer = new CsvWriter(resultQueue, executor);) {
-            scheduler.start();
-            writer.start();
-            scheduler.awaitCompletion();
-            writer.awaitCompletion();
-        } catch (Exception e) {
-            System.err.println("[ERROR] " + e.getMessage());
-            System.err.println(e.getClass());
-            e.printStackTrace();
-            executor.shutdown();
-        } finally {
-            executor.shutdown();
-        }
-    }
+		List<TweetBatch> remainingBatches = tweetBatches.stream()
+											.filter(batch -> batch.batchIndex() >= firstBatch)
+											.collect(Collectors.toList());
+		System.out.printf("Parsed %,d tweets into %,d batches\n", config.tweets.size(), tweetBatches.size());
+		if (remainingBatches.isEmpty()) {
+			System.out.println("Nothing to process. The checkpoint already covers every batch.");
+			System.exit(1);
+		}
+		System.out.printf("Resuming from batch %d; %,d batches remain\n", firstBatch, remainingBatches.size());
+		return remainingBatches;
+	}
+
+	private static void evaluateTweetBatches(List<TweetBatch> tweetBatches, AppConfig config)
+	throws InterruptedException, ExecutionException, IOException {
+		BlockingQueue<QueueEvent<TweetBatch>> tweetQueue = new ArrayBlockingQueue<>(tweetBatches.size() + 1);;
+		BlockingQueue<QueueEvent<AnalysisResult>> resultQueue = new LinkedBlockingDeque<>();
+		for (int i = 0; i < tweetBatches.size(); i++) {
+			tweetQueue.put(new QueueEvent.Item<>(tweetBatches.get(i)));
+		}
+		tweetQueue.put(QueueEvent.End.instance());
+		AiProvider provider = new GeminiAiProvider(config.apiKey, config.criteria, mapper);
+		ExecutorService executor = Executors.newCachedThreadPool();
+
+		try (RateLimiterScheduler scheduler = new RateLimiterScheduler(provider, tweetQueue, resultQueue, executor);
+					CsvWriter writer = new CsvWriter(resultQueue, executor);) {
+			scheduler.start();
+			writer.start();
+			scheduler.awaitCompletion();
+			writer.awaitCompletion();
+		} catch (Exception e) {
+			System.err.println("[ERROR] " + e.getMessage());
+			System.err.println(e.getClass());
+			e.printStackTrace();
+			executor.shutdown();
+		} finally {
+			executor.shutdown();
+		}
+	}
 
 }

@@ -8,10 +8,12 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.stream.Stream;
 
 import dev.luhwani.model.AnalysisResult;
 import dev.luhwani.model.Checkpoint;
@@ -40,10 +42,11 @@ public class CsvWriter implements AutoCloseable {
             Files.createDirectories(parentDir);
         }
 
+        Checkpoint checkpoint = CheckpointResolver.load();
         if (Files.notExists(outputPath)) {
 
-            if (CheckpointResolver.load().lastCompletedBatchIndex() != Checkpoint.empty().lastCompletedBatchIndex()) {
-                throw new IllegalStateException("[ERROR] Checkpoint exists, but output.csv file not found");
+            if (checkpoint.lastCompletedBatchIndex() != Checkpoint.empty().lastCompletedBatchIndex()) {
+                throw new IllegalStateException("Checkpoint exists, but output.csv file not found");
             }
             Files.writeString(
                     outputPath,
@@ -57,12 +60,27 @@ public class CsvWriter implements AutoCloseable {
                     StandardOpenOption.CREATE,
                     StandardOpenOption.WRITE,
                     StandardOpenOption.APPEND);
-        } else {
-            List<String> lines = Files.readAllLines(outputPath, StandardCharsets.UTF_8);
-
-            boolean hasContent = !lines.isEmpty();
-            boolean validHeader = hasContent && lines.get(0).trim().startsWith(CSV_HEADER);
-            if (hasContent && validHeader) {
+            return;
+        }
+        try (Stream<String> lines = Files.lines(outputPath, StandardCharsets.UTF_8)) {
+            Optional<String> lastNonEmptyLine = lines
+                    .filter(line -> !line.isEmpty())
+                    .reduce((first, second) -> second); // Only keeps the latest line encountered
+            if (lastNonEmptyLine.isEmpty()) {
+                if (checkpoint.lastCompletedBatchIndex() != Checkpoint.empty().lastCompletedBatchIndex()) {
+                    throw new IllegalStateException("Checkpoint exists, but output.csv file is empty");
+                }
+                this.writer = Files.newBufferedWriter(
+                        outputPath,
+                        StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.WRITE,
+                        StandardOpenOption.APPEND);
+                writer.write(CSV_HEADER);
+                writer.newLine();
+                return;
+            }
+            if (lastNonEmptyLine.get().contains(checkpoint.lastTweetId())) {
                 this.writer = Files.newBufferedWriter(
                         outputPath,
                         StandardCharsets.UTF_8,
@@ -70,8 +88,10 @@ public class CsvWriter implements AutoCloseable {
                         StandardOpenOption.WRITE,
                         StandardOpenOption.APPEND);
             } else {
-                throw new IllegalStateException("[ERROR] Output file is invalid");
+                throw new IllegalStateException(
+                        "The last line of the file does not match the last tweet ID in the checkpoint.");
             }
+
         }
     }
 
@@ -89,22 +109,23 @@ public class CsvWriter implements AutoCloseable {
         try {
             while (true) {
                 QueueEvent<AnalysisResult> event = queue.take();
-                switch (event) {
-                    case QueueEvent.Item<AnalysisResult>(var result) -> {
-                        for (TweetDecision decision : result.results()) {
-                            writer.write("https://x.com/i/status/" + decision.tweetId());
-                            writer.write(",");
-                            writer.write(decision.decision().name());
-                            writer.write(",");
-                            writer.write(cleanForCsv(decision.reason()));
-                            writer.newLine();
-                        }
-                        writer.flush();
-                        CheckpointResolver.save(result.batchIndex(), result.results().getLast().tweetId());
+
+                if (event instanceof QueueEvent.Item) {
+                    QueueEvent.Item<AnalysisResult> itemEvent = (QueueEvent.Item<AnalysisResult>) event;
+                    AnalysisResult result = itemEvent.value();
+
+                    for (TweetDecision decision : result.results()) {
+                        writer.write("https://x.com/i/status/" + decision.tweetId());
+                        writer.write(",");
+                        writer.write(decision.decision().name());
+                        writer.write(",");
+                        writer.write(cleanForCsv(decision.reason()));
+                        writer.newLine();
                     }
-                    case QueueEvent.End<AnalysisResult>() -> {
-                        return;
-                    }
+                    writer.flush();
+                    CheckpointResolver.save(result.batchIndex(), getLastTweetId(result.results()));
+                } else if (event instanceof QueueEvent.End) {
+                    return;
                 }
             }
         } catch (IOException | InterruptedException e) {
@@ -120,6 +141,13 @@ public class CsvWriter implements AutoCloseable {
         }
     }
 
+    private static String getLastTweetId(List<TweetDecision> results) {
+        if (results.isEmpty()) {
+            throw new IllegalStateException("Results list cannot be empty");
+        }
+        return results.get(results.size() - 1).tweetId();
+    }
+
     public void awaitCompletion() throws InterruptedException, ExecutionException {
         if (task == null) {
             throw new IllegalStateException("Provider has not been started");
@@ -128,7 +156,7 @@ public class CsvWriter implements AutoCloseable {
     }
 
     private static String cleanForCsv(String input) {
-        
+
         if (input == null) {
             return "";
         }
@@ -148,9 +176,9 @@ public class CsvWriter implements AutoCloseable {
 
     private static String removeControlCharacters(String value) {
         return value
-                .replace("\r\n", " ")  // Windows line ending
-                .replace("\n", " ")    // Unix line ending
-                .replace("\r", " ");    // Old Mac line ending
+                .replace("\r\n", " ") // Windows line ending
+                .replace("\n", " ") // Unix line ending
+                .replace("\r", " "); // Old Mac line ending
     }
 
     private static boolean needsQuoting(String value) {

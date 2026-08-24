@@ -1,11 +1,34 @@
 package dev.luhwani.model;
 
-public sealed interface QueueEvent<T>
-        permits QueueEvent.Item, QueueEvent.End {
+import java.util.Objects;
 
-    record Item<T>(T value) implements QueueEvent<T> {
+public abstract class QueueEvent<T> {
+    private QueueEvent() {
     }
 
-    record End<T>() implements QueueEvent<T> {
+    public static final class Item<T> extends QueueEvent<T> {
+        private final T value;
+
+        public Item(T value) {
+            this.value = Objects.requireNonNull(value, "value cannot be null");
+        }
+
+        public T value() {
+            return value;
+        }
+
+    }
+
+    public static final class End<T> extends QueueEvent<T> {
+        private static final End<?> INSTANCE = new End<>();
+
+        private End() {
+        }
+
+        @SuppressWarnings("unchecked")
+        public static <T> End<T> instance() {
+            return (End<T>) INSTANCE;
+        }
+
     }
 }

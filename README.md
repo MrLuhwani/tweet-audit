@@ -12,7 +12,7 @@ The first project in [Ben X's backend engineering path](https://github.com/benx4
 
 ## Prerequisites
 These are the things you need to run this software application:
-- [Java 21](https://www.oracle.com/java/technologies/javase-jdk21-downloads.html)
+- [Java 11](https://www.oracle.com/java/technologies/javase-jdk11-downloads.html)
 - [Maven 3.9+](https://maven.apache.org/download.cgi)
 - Download your X archive from Settings → Your Account → Download an archive of your data (takes 24-48 hours)
 - Get a *free* Gemini Api Key from [Google Ai Studio](https://aistudio.google.com/app/apikey)
@@ -56,8 +56,8 @@ mvn compile exec:java
 
 ```json
 {
-    "lastCompletedBatchIndex":0,
-    "lastTweetId":"tweet-id"
+    "last_completed_batch_index":91,
+    "last_tweet_id":"2009767783429447751"
 }
 ```
 
@@ -72,7 +72,6 @@ https://x.com/i/status/1236464576879898865,DELETE,"Mentions Web3, which is inclu
 https://x.com/i/status/2838488457757477382,KEEP,Harmless personal thought.
 ```
 
-
 ## Roadmap
 
 The current implementation is an MVP. These are other features I plan to implement:
@@ -81,8 +80,9 @@ The current implementation is an MVP. These are other features I plan to impleme
 - Add better error handling strategies and logging
 - Add appropriate tests for the project
 - Add a simple loading animation to improve visual appeal
-- Add docker support
-- Add CI/CD
 - Add model configuration options
 - Add options to allow or remove retweets
 - Add a way to type out a criteria and determine the specifications based on the typed out text
+- Upgrade the code from Java 11 to 21
+- Add docker support
+- Add CI/CD
