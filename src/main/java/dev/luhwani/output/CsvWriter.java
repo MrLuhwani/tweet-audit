@@ -45,7 +45,7 @@ public class CsvWriter implements AutoCloseable {
         Checkpoint checkpoint = CheckpointResolver.load();
         if (Files.notExists(outputPath)) {
 
-            if (checkpoint.lastCompletedBatchIndex() != Checkpoint.empty().lastCompletedBatchIndex()) {
+            if (checkpoint.lastCompletedBatchNumber() != Checkpoint.empty().lastCompletedBatchNumber()) {
                 throw new IllegalStateException("Checkpoint exists, but output.csv file not found");
             }
             Files.writeString(
@@ -67,7 +67,7 @@ public class CsvWriter implements AutoCloseable {
                     .filter(line -> !line.isEmpty())
                     .reduce((first, second) -> second); // Only keeps the latest line encountered
             if (lastNonEmptyLine.isEmpty()) {
-                if (checkpoint.lastCompletedBatchIndex() != Checkpoint.empty().lastCompletedBatchIndex()) {
+                if (checkpoint.lastCompletedBatchNumber() != Checkpoint.empty().lastCompletedBatchNumber()) {
                     throw new IllegalStateException("Checkpoint exists, but output.csv file is empty");
                 }
                 this.writer = Files.newBufferedWriter(
@@ -123,7 +123,7 @@ public class CsvWriter implements AutoCloseable {
                         writer.newLine();
                     }
                     writer.flush();
-                    CheckpointResolver.save(result.batchIndex(), getLastTweetId(result.results()));
+                    CheckpointResolver.save(result.batchNumber(), getLastTweetId(result.results()));
                 } else if (event instanceof QueueEvent.End) {
                     return;
                 }

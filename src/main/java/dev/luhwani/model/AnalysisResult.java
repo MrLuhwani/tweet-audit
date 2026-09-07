@@ -6,25 +6,25 @@ import java.util.List;
 
 public final class AnalysisResult {
 
-    private final int batchIndex;
+    private final int batchNumber;
     private final List<TweetDecision> results;
 
     @JsonCreator
     public AnalysisResult(
-            @JsonProperty("batch_index") int batchIndex,
+            @JsonProperty("batch_index") int batchNumber,
             @JsonProperty("results") List<TweetDecision> results) {
-        if (batchIndex < 0) {
+        if (batchNumber < 0) {
             throw new IllegalArgumentException("Batch index cannot be negative");
         }
         if (results == null || results.isEmpty()) {
             throw new IllegalArgumentException("A batch cannot be empty");
         }
-        this.batchIndex = batchIndex;
+        this.batchNumber = batchNumber;
         this.results = List.copyOf(results);
     }
 
-    public int batchIndex() {
-        return batchIndex;
+    public int batchNumber() {
+        return batchNumber;
     }
 
     public List<TweetDecision> results() {

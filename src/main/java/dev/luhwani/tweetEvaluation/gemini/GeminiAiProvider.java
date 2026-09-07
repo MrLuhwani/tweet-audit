@@ -56,7 +56,7 @@ public class GeminiAiProvider extends AiProvider {
 
     ObjectNode batchJson = mapper.createObjectNode();
 
-    batchJson.put("batch_index", batch.batchIndex());
+    batchJson.put("batch_index", batch.batchNumber());
 
     ArrayNode tweets = mapper.createArrayNode();
 
@@ -88,8 +88,8 @@ public class GeminiAiProvider extends AiProvider {
 
         ObjectNode props = mapper.createObjectNode();
 
-        ObjectNode batchIndex = mapper.createObjectNode();
-        batchIndex.put("type", "integer");
+        ObjectNode batchNumber = mapper.createObjectNode();
+        batchNumber.put("type", "integer");
 
         ObjectNode results = mapper.createObjectNode();
         results.put("type", "array");
@@ -129,7 +129,7 @@ public class GeminiAiProvider extends AiProvider {
 
         results.set("items", item); 
 
-        props.set("batch_index", batchIndex);
+        props.set("batch_index", batchNumber);
         props.set("results", results); 
 
         schema.set("properties", props);

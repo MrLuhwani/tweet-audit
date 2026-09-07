@@ -49,7 +49,7 @@ public final class RateLimiterScheduler implements AutoCloseable {
                     
                     Instant start = Instant.now();
                     // TODO: remove this once you figure out the average time requests are made
-                    System.out.println("batch" + batch.batchIndex() + ": " + start);
+                    System.out.println("batch" + batch.batchNumber() + ": " + start);
                     AnalysisResult result = provider.analyze(batch);
                     System.out.println("Time: " + Duration.between(start, Instant.now()));
                     outputQueue.put(new QueueEvent.Item<>(result));

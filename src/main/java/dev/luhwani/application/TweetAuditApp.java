@@ -10,7 +10,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
-import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -21,8 +20,8 @@ import dev.luhwani.model.Checkpoint;
 import dev.luhwani.model.QueueEvent;
 import dev.luhwani.model.TweetBatch;
 import dev.luhwani.model.TweetData;
-import dev.luhwani.output.CheckpointResolver;
 import dev.luhwani.output.CsvWriter;
+import dev.luhwani.output.OutputWriter;
 import dev.luhwani.tweetEvaluation.AiProvider;
 import dev.luhwani.tweetEvaluation.RateLimiterScheduler;
 import dev.luhwani.tweetEvaluation.gemini.GeminiAiProvider;
@@ -78,27 +77,19 @@ public final class TweetAuditApp {
 		return config;
 	}
 
-	private static List<TweetBatch> processTweets(AppConfig config) throws IOException {
-
-		List<TweetBatch> tweetBatches = TweetBatchFactory.createBatches(config.tweets);
-
-		Checkpoint checkpoint = CheckpointResolver.load();
-		int firstBatch = checkpoint.nextBatchIndex();
-
-		if (firstBatch > tweetBatches.size()) {
-			throw new IllegalStateException("Checkpoint is ahead of the available tweet batches");
+	private static List<TweetBatch> processTweets(AppConfig config) throws IOException, InterruptedException {
+		Checkpoint checkpoint = OutputWriter.loadCheckpoint();
+		int lastCompletedBatch = checkpoint.lastCompletedBatchNumber();
+		List<TweetBatch> tweetBatches = TweetBatchFactory.createBatches(config.tweets, lastCompletedBatch);
+		if (tweetBatches.isEmpty()) {
+			System.out.println("Tweet Processing had been completed previously");
+			return List.of();
 		}
-
-		List<TweetBatch> remainingBatches = tweetBatches.stream()
-											.filter(batch -> batch.batchIndex() >= firstBatch)
-											.collect(Collectors.toList());
-		System.out.printf("Parsed %,d tweets into %,d batches\n", config.tweets.size(), tweetBatches.size());
-		if (remainingBatches.isEmpty()) {
-			System.out.println("Nothing to process. The checkpoint already covers every batch.");
-			System.exit(1);
-		}
-		System.out.printf("Resuming from batch %d; %,d batches remain\n", firstBatch, remainingBatches.size());
-		return remainingBatches;
+		System.out.println(
+				"Parsed " + config.tweets.size() + " tweets\n" +
+						"Resuming from batch " + tweetBatches.getFirst().batchNumber() + "/" + tweetBatches.size()
+						+ " batches\n");
+		return tweetBatches;
 	}
 
 	private static void evaluateTweetBatches(List<TweetBatch> tweetBatches, AppConfig config)

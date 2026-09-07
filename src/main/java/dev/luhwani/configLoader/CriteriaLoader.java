@@ -18,25 +18,39 @@ public final class CriteriaLoader {
 		this.objectMapper = objectMapper;
 	}
 
-
 	public Path load() throws IOException {
 		Path projectRoot = Paths.get("").toAbsolutePath();
 		Path criteriaPath = projectRoot.resolve(CRITERIA_PATH);
 		if (!Files.exists(criteriaPath) || !Files.isRegularFile(criteriaPath)) {
 			Path criteriaDefault = projectRoot.resolve(DEFAULT_CRITERIA_PATH);
-			if (!Files.exists(criteriaDefault) || !Files.isRegularFile(criteriaDefault)) {
-				// not sure if this is concatenable
-				throw new IllegalStateException("Default criteria not be found at " + projectRoot);
+
+			if (!Files.exists(criteriaDefault)) {
+				throw new IOException("Fallback criteria file could not be found at " + projectRoot);
+			}
+
+			if (!Files.isRegularFile(criteriaDefault)) {
+				throw new IOException("Fallback criteria at " + projectRoot + " is not a regular file");
 			}
 			criteriaPath = criteriaDefault;
-			System.out.printf("[WARN] Missing Criteria Data: Could not find %s at path: %s \n Exit the console if you wish to configure your own criteria as the default criteria will be used. \n", CRITERIA_PATH, projectRoot);
+			System.out.printf(
+					"[WARN] Missing Criteria Data: Could not find %s at path: %s \n Default criteria will be used for tweet analysis. \n",
+					CRITERIA_PATH, projectRoot);
 		}
 
-	String criteriaJson = Files.readString(criteriaPath);
+		if (!Files.isReadable(criteriaPath)) {
+			throw new IOException("Could not read criteria file at " + criteriaPath);
+		}
+
+		String criteriaJson = Files.readString(criteriaPath);
+
+		if (criteriaJson == null || criteriaJson.strip().isEmpty()) {
+			throw new IOException("Empty criteria file found");
+		}
+
 		JsonNode node = objectMapper.readTree(criteriaJson);
 
 		if (node.isEmpty()) {
-			throw new IllegalStateException("Empty criteria file found");
+			throw new IOException("Empty criteria file found");
 		}
 
 		return criteriaPath;

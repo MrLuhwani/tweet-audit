@@ -31,6 +31,10 @@ public final class TweetArchiveLoader {
         if (!Files.isRegularFile(criteriaPath)) {
             throw new IOException("Could not read tweet data at: " + TWEET_ARCHIVE_PATH);
         }
+        if (!Files.isReadable(criteriaPath)) {
+            throw new IOException("Tweet archive is not readable at path: " + TWEET_ARCHIVE_PATH);
+        }
+
         String rawContent = Files.readString(criteriaPath);
         String jsonContent = stripJavaScriptAssignment(rawContent);
 
@@ -42,12 +46,12 @@ public final class TweetArchiveLoader {
         if (!jsonArray.isArray()) {
             throw new IOException("Expected an array of tweets but array not found. ");
         }
-        
         if (jsonArray.isEmpty()) {
-        	throw new IOException("Empty array found at " + TWEET_ARCHIVE_PATH);
+            throw new IOException("Empty array found at " + TWEET_ARCHIVE_PATH);
         }
 
         List<TweetData> tweets = new ArrayList<>();
+        int tweetCount = 0;
         for (JsonNode obj : jsonArray) {
             JsonNode tweetNode = obj.get("tweet");
             String id = nullableText(tweetNode, "id_str");
@@ -59,29 +63,32 @@ public final class TweetArchiveLoader {
             if (id != null && text != null) {
                 tweets.add(new TweetData(id, text));
             } else {
-            	System.out.println("[WARN] Tweet missing id or text: " + obj);
+                // TODO: log the tweet for later processing
+                System.out.println("[WARN] Tweet " + (tweetCount + 1) + " is missing either id or text.");
             }
+            tweetCount++;
         }
-
         return List.copyOf(tweets);
     }
 
     /**
-     * An unmodified {@code tweet.js} file starts with {@code "window.YTD.tweets.part0"}. This method
-     * looks for the first index of a square bracket ('[') that identifies the start of the tweet array
+     * An unmodified {@code tweet.js} file starts with
+     * {@code "window.YTD.tweets.part0 = "}. This method
+     * looks for the first index of a square bracket ('[') that identifies the start
+     * of the tweet array
+     * 
      * @param tweets
      * @return tweets in a string format, without the js prefix
      * @throws IOException
      */
     private static String stripJavaScriptAssignment(String tweets) throws IOException {
-        String trimmed = tweets.stripLeading();
 
+        String trimmed = tweets.strip();
         if (trimmed.startsWith("[")) {
             return trimmed;
         }
 
         int arrayStart = trimmed.indexOf('[');
-
         if (arrayStart < 0) {
             throw new IOException("Could not find the JSON array in the tweets archive");
         }
@@ -96,8 +103,11 @@ public final class TweetArchiveLoader {
         JsonNode value = node.get(field);
         if (value == null || value.isNull()) {
             return null;
-        } else {
-            return value.asText();
         }
+        String text = value.asText().trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        return text;
     }
 }

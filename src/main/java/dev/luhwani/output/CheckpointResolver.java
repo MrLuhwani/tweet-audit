@@ -27,7 +27,7 @@ public final class CheckpointResolver {
         return objectMapper.readValue(CHECKPOINT_PATH.toFile(), Checkpoint.class);
     }
 
-    public static void save(int lastCompletedBatchIndex, String lastTweetId) throws IOException {
-        objectMapper.writeValue(CHECKPOINT_PATH.toFile(), new Checkpoint(lastCompletedBatchIndex, lastTweetId));
+    public static void save(int lastCompletedBatchNumber, String lastTweetId) throws IOException {
+        objectMapper.writeValue(CHECKPOINT_PATH.toFile(), new Checkpoint(lastCompletedBatchNumber, lastTweetId));
     }
 }
