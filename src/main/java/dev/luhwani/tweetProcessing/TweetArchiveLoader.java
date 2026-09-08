@@ -39,7 +39,8 @@ public final class TweetArchiveLoader {
         String jsonContent = stripJavaScriptAssignment(rawContent);
 
         // this throws an error if the file is invalid json, so even if we successfully
-        // strip the js assignment, but the file itself doesn't have a proper json structure,
+        // strip the js assignment, but the file itself doesn't have a proper json
+        // structure,
         // it would throw an err
         JsonNode jsonArray = objectMapper.readTree(jsonContent);
 
@@ -59,12 +60,12 @@ public final class TweetArchiveLoader {
             if (id == null) {
                 id = nullableText(tweetNode, "id");
             }
+            if (id == null) {
+                System.out.println("[WARN] Tweet " + (tweetCount + 1) + " is missing id.");
+            }
             String text = nullableText(tweetNode, "full_text");
             if (id != null && text != null) {
                 tweets.add(new TweetData(id, text));
-            } else {
-                // TODO: log the tweet for later processing
-                System.out.println("[WARN] Tweet " + (tweetCount + 1) + " is missing either id or text.");
             }
             tweetCount++;
         }

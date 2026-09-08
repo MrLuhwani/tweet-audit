@@ -9,7 +9,7 @@ import dev.luhwani.model.TweetData;
 public final class TweetBatchFactory {
 
     // TODO: make more configurable
-    private static final int BATCH_SIZE = 15;
+    public static final int BATCH_SIZE = 15;
 
     private TweetBatchFactory() {
     }

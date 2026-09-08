@@ -1,20 +1,44 @@
 package dev.luhwani.output;
 
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import dev.luhwani.model.AnalysisResult;
 import dev.luhwani.model.Checkpoint;
+import dev.luhwani.model.QueueEvent;
+import dev.luhwani.model.QueueEvent.Item;
+import dev.luhwani.model.TweetDecision;
 
-public class OutputWriter {
+public class OutputWriter implements AutoCloseable {
+
+    private final BlockingQueue<QueueEvent<AnalysisResult>> outputQueue;
+    private final ExecutorService executor;
+    private final BufferedWriter writer;
+    private Future<?> task;
+    private Integer nextExpectedBatchNumber;
+    private final TreeMap<Integer, AnalysisResult> pending;
+    private final Set<Integer> failedBatchNumbers;
+
+    private static final ObjectMapper objectMapper = new ObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private static final String CSV_HEADER = "tweet_link,decision,reason";
     private static final Path CHECKPOINT_PATH = Paths
@@ -28,8 +52,16 @@ public class OutputWriter {
             .normalize()
             .resolve("output/output.csv");
 
-    private static final ObjectMapper objectMapper = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    public OutputWriter(ExecutorService executor,
+            BlockingQueue<QueueEvent<AnalysisResult>> outputQueue, Set<Integer> failedBatchNumbers) throws IOException {
+        this.outputQueue = outputQueue;
+        this.executor = executor;
+        this.writer = Files.newBufferedWriter(OUTPUT_PATH, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.APPEND);
+        this.pending = new TreeMap<>();
+        this.failedBatchNumbers = failedBatchNumbers;
+    }
 
     public static Checkpoint loadCheckpoint() throws IOException {
         if (Files.exists(CHECKPOINT_PATH) && Files.exists(OUTPUT_PATH)) {
@@ -71,5 +103,108 @@ public class OutputWriter {
         }
         throw new IllegalStateException("Could not resolve audit progess. Checkpoint file, or output file missing");
 
+    }
+
+    public void start(int nextExpectedBatchNumber) {
+        this.nextExpectedBatchNumber = nextExpectedBatchNumber;
+        task = executor.submit(() -> {
+            try {
+                handleResult();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
+    public void awaitCompletion() throws ExecutionException {
+        try {
+            task.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void handleResult() throws Exception {
+        while (true) {
+            QueueEvent<AnalysisResult> event = outputQueue.poll(3, TimeUnit.SECONDS);
+            if (event == null) {
+                continue;
+            }
+            if (event instanceof QueueEvent.End) {
+                break;
+            }
+            QueueEvent.Item<AnalysisResult> item = (Item<AnalysisResult>) event;
+            AnalysisResult result = item.value();
+            pending.put(result.batchNumber(), result);
+            while (pending.containsKey(nextExpectedBatchNumber)) { // while, not if — drain consecutive ready batches
+                AnalysisResult ready = pending.remove(nextExpectedBatchNumber);
+                write(ready);
+                nextExpectedBatchNumber++;
+            }
+            while (failedBatchNumbers.contains(nextExpectedBatchNumber)) {
+                nextExpectedBatchNumber++;
+            }
+        }
+    }
+
+    private void write(AnalysisResult result) throws IOException {
+        for (TweetDecision decision : result.results()) {
+            writer.write("https://x.com/i/status/" + decision.tweetId());
+            writer.write(",");
+            writer.write(decision.decision().name());
+            writer.write(",");
+            writer.write(cleanForCsv(decision.reason()));
+            writer.newLine();
+        }
+        writer.flush();
+        objectMapper.writeValue(CHECKPOINT_PATH.toFile(),
+                new Checkpoint(result.batchNumber(), getLastTweetId(result.results())));
+    }
+
+    private String getLastTweetId(List<TweetDecision> results) {
+        if (results.isEmpty()) {
+            throw new IllegalStateException("Results list cannot be empty");
+        }
+        return results.get(results.size() - 1).tweetId();
+    }
+
+    private String cleanForCsv(String input) {
+
+        if (input == null) {
+            return "";
+        }
+
+        String cleaned = input.trim();
+
+        cleaned = removeControlCharacters(cleaned);
+
+        cleaned = cleaned.replace("\"", "\"\"");
+
+        if (needsQuoting(cleaned)) {
+            cleaned = "\"" + cleaned + "\"";
+        }
+
+        return cleaned;
+    }
+
+    private String removeControlCharacters(String value) {
+        return value
+                .replace("\r\n", " ") // Windows line ending
+                .replace("\n", " ") // Unix line ending
+                .replace("\r", " "); // Old Mac line ending
+    }
+
+    private boolean needsQuoting(String value) {
+        return value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r");
+    }
+
+    @Override
+    public void close() throws Exception {
+        executor.awaitTermination(10, TimeUnit.SECONDS);
+        writer.close();
     }
 }

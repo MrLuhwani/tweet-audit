@@ -38,5 +38,6 @@ build/
 # user specific data
 data/
 /output/
+logs/
 
 THOUGHTS.md

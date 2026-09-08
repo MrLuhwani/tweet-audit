@@ -11,7 +11,7 @@ public final class AnalysisResult {
 
     @JsonCreator
     public AnalysisResult(
-            @JsonProperty("batch_index") int batchNumber,
+            @JsonProperty("batch_number") int batchNumber,
             @JsonProperty("results") List<TweetDecision> results) {
         if (batchNumber < 0) {
             throw new IllegalArgumentException("Batch index cannot be negative");
