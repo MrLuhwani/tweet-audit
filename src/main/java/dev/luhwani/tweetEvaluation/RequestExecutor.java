@@ -107,6 +107,7 @@ public final class RequestExecutor implements AutoCloseable {
     private List<Future<?>> tasks;
     private final EvaluationSummary evaluationSummary;
     private final BatchFailureAppender failureAppender;
+    private final boolean persistFailures;
     private final Integer MAX_ATTEMPTS = 3;
     private static final Logger LOGGER = Logger.getLogger(RequestExecutor.class.getName());
     private volatile Exception lastBatchException = new RuntimeException("No BatchException has been thrown yet");
@@ -115,14 +116,21 @@ public final class RequestExecutor implements AutoCloseable {
             BlockingQueue<QueueEvent<TweetBatch>> inputQueue,
             BlockingQueue<QueueEvent<AnalysisResult>> outputQueue, ObjectMapper objectMapper,
             Set<Integer> failedBatchNumbers) {
+        this(provider, executor, inputQueue, outputQueue, objectMapper, failedBatchNumbers, true);
+    }
+
+    public RequestExecutor(AiProvider provider, ExecutorService executor,
+            BlockingQueue<QueueEvent<TweetBatch>> inputQueue,
+            BlockingQueue<QueueEvent<AnalysisResult>> outputQueue, ObjectMapper objectMapper,
+            Set<Integer> failedBatchNumbers, boolean persistFailures) {
         this.provider = provider;
         this.executor = executor;
         this.inputQueue = inputQueue;
         this.outputQueue = outputQueue;
         this.failureAppender = new BatchFailureAppender(objectMapper, failedBatchNumbers);
+        this.persistFailures = persistFailures;
         this.evaluationSummary = new EvaluationSummary();
         evaluationSummary.remaining.set(inputQueue.size());
-        ;
         this.tasks = new ArrayList<>();
     }
 
@@ -150,7 +158,10 @@ public final class RequestExecutor implements AutoCloseable {
                         Thread.currentThread().interrupt();
                         throw new RuntimeException(e);
                     } catch (BatchException e) {
-                        failureAppender.failureQueue.add(e);
+                        failureAppender.failedBatchNumbers.add(e.getFailedBatch().batchNumber());
+                        if (persistFailures) {
+                            failureAppender.failureQueue.add(e);
+                        }
                         if (lastBatchException.getMessage().equals(e.getMessage())) {
                             maxBatchExceptions.decrementAndGet();
                         } else {

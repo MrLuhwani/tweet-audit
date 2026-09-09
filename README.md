@@ -16,7 +16,7 @@ The first project in [Ben X's backend engineering path](https://github.com/benx4
 Before you go into reading how to use this tool, I want to clarify some things:
 
 - Defining number of `likes`, `comments`, or `reposts` does not affect the evaulation results, as tweets are judged based on the topic/content of the tweet rather than the engagement data.
-- This tool does not automate the deletion process. You still have to manually go through your tweets to decide what will be kept and what will be deleted.
+- This tool does not automate the deletion process. You still have to manually go through your tweets to decide what will be kept and what will be deleted. You can always use an automation tool if you have one.
 - This tool recommends both tweets to keep, and delete. The file would have a long list of tweets, so to help you filter to just those to delete/keep, I have written the steps out for you [here](#filtering-results).
 
 Info on how to use the tool has been written below:
@@ -68,11 +68,13 @@ mvn compile exec:java
 - When the tool is reloaded, it checks the checkpoint file, and continues from where it stopped
 - If for any reason, a batch fails, a `failedBatches.jsonl` is created in the output folder to identify batches that where not processed
 
-```jsonl
+```json
 {"batchNumber":12,"tweets":[{"id":"1874645171535257831","text":"RT @_Tech…"},{"id":"2074644957747450308","text":"RT @bISHAMON Wow!…"}]}
 {"batchNumber":26,"tweets":[{"id":"1874645171535234831","text":"We really…"},{"id":"2074644957747450308","text":"Emphasis…"}]}
 {"batchNumber":37,"tweets":[{"id":"1874645171535234831","text":"Sentiment is not…"},{"id":"2074644957747450308","text":"Smirking…"}]}
 ```
+
+- On next run, the tool firstly tries to process failed batches before it resumes unprocessed tweet batches.
 
 An example of how the output folder looks like
 ```csv
@@ -97,7 +99,6 @@ Here are the steps to filter the results of the csv in `Microsoft Excel`.
 
 These are other features I plan to implement:
 
-- Logic to retry failed batches on re-run
 - Add appropriate tests for the project
 - Add a simple loading animation to improve visual appeal
 - Add model configuration options

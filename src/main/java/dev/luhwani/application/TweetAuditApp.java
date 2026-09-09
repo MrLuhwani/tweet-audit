@@ -30,6 +30,7 @@ import dev.luhwani.tweetEvaluation.RequestExecutor.EvaluationSummary;
 import dev.luhwani.tweetEvaluation.gemini.GeminiAiProvider;
 import dev.luhwani.tweetProcessing.TweetArchiveLoader;
 import dev.luhwani.tweetProcessing.TweetBatchFactory;
+import dev.luhwani.tweetProcessing.FailedBatchLoader;
 
 public final class TweetAuditApp {
 
@@ -40,11 +41,13 @@ public final class TweetAuditApp {
 		private final String apiKey;
 		private final Path criteria;
 		private final List<TweetData> tweets;
+		private final List<TweetBatch> failedBatches;
 
-		AppConfig(String apiKey, Path criteria, List<TweetData> tweets) {
+		AppConfig(String apiKey, Path criteria, List<TweetData> tweets, List<TweetBatch> failedBatches) {
 			this.apiKey = apiKey;
 			this.criteria = criteria;
 			this.tweets = tweets;
+			this.failedBatches = failedBatches;
 		}
 	}
 
@@ -56,8 +59,9 @@ public final class TweetAuditApp {
 		try {
 			System.out.println("----------Tweet Audit App----------");
 			AppConfig config = load();
+			retryFailedBatches(config);
 			List<TweetBatch> tweetBatches = processTweets(config);
-			evaluateTweets(tweetBatches, config);
+			evaluateTweets(tweetBatches, config, true);
 		} catch (IOException | InterruptedException | IllegalStateException | ExecutionException e) {
 			LOGGER.severe("Error message: " + e.getMessage());
 		} catch (Exception e) {
@@ -69,10 +73,24 @@ public final class TweetAuditApp {
 	private static AppConfig load() throws IOException {
 		String apiKey = ApiKeyLoader.load();
 		Path criteria = new CriteriaLoader(OBJECT_MAPPER).load();
+		List<TweetBatch> failedBatches = new FailedBatchLoader(OBJECT_MAPPER).load();
+		if (!failedBatches.isEmpty()) {
+			System.out.println("[ALERT] Failed batches from a previous run are being retried.");
+		}
 		List<TweetData> tweets = new TweetArchiveLoader(OBJECT_MAPPER).load();
 		TweetAuditApp app = new TweetAuditApp();
-		TweetAuditApp.AppConfig config = app.new AppConfig(apiKey, criteria, tweets);
+		TweetAuditApp.AppConfig config = app.new AppConfig(apiKey, criteria, tweets, failedBatches);
 		return config;
+	}
+
+	private static void retryFailedBatches(AppConfig config) throws Exception {
+		if (config.failedBatches.isEmpty()) {
+			return;
+		}
+		Checkpoint lastReprocessedBatch = evaluateTweets(config.failedBatches, config, false);
+		if (lastReprocessedBatch != null) {
+			OutputWriter.updateCheckpointIfAhead(lastReprocessedBatch);
+		}
 	}
 
 	private static List<TweetBatch> processTweets(AppConfig config) throws IOException, InterruptedException {
@@ -91,11 +109,11 @@ public final class TweetAuditApp {
 		return tweetBatches;
 	}
 
-	private static void evaluateTweets(List<TweetBatch> tweetBatches, AppConfig config) throws Exception {
+	private static Checkpoint evaluateTweets(List<TweetBatch> tweetBatches, AppConfig config,
+			boolean updateCheckpoint) throws Exception {
 		if (tweetBatches.isEmpty()) {
-			return;
+			return null;
 		}
-		// the plus one is for an instance of an End event
 		BlockingQueue<QueueEvent<TweetBatch>> tweetQueue = new ArrayBlockingQueue<>(tweetBatches.size());
 		for (TweetBatch batch : tweetBatches) {
 			tweetQueue.put(new QueueEvent.Item<>(batch));
@@ -107,14 +125,15 @@ public final class TweetAuditApp {
 		AiProvider provider = new GeminiAiProvider(config.apiKey, config.criteria, OBJECT_MAPPER);
 		Set<Integer> failedBatchNumbers = new HashSet<>();
 		try (RequestExecutor requestExecutor = new RequestExecutor(provider, workerPool, tweetQueue, resultQueue,
-				OBJECT_MAPPER, failedBatchNumbers);
-				OutputWriter writer = new OutputWriter(writerPool, resultQueue, failedBatchNumbers);) {
+				OBJECT_MAPPER, failedBatchNumbers, updateCheckpoint);
+				OutputWriter writer = new OutputWriter(writerPool, resultQueue, failedBatchNumbers, updateCheckpoint);) {
 			requestExecutor.start(workerCount);
 			writer.start(tweetBatches.get(0).batchNumber());
 			EvaluationSummary summary = requestExecutor.awaitCompletion();
 			writer.awaitCompletion();
 			int failed = tweetQueue.size() - summary.getSucceeded();
 			LOGGER.info("Completed batches: " + summary.getSucceeded() + "\nFailed batches: " + failed);
+			return writer.lastWrittenCheckpoint();
 		} finally {
 			workerPool.shutdown();
 			writerPool.shutdown();

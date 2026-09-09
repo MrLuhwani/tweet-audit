@@ -26,6 +26,7 @@ import dev.luhwani.model.Checkpoint;
 import dev.luhwani.model.QueueEvent;
 import dev.luhwani.model.QueueEvent.Item;
 import dev.luhwani.model.TweetDecision;
+import dev.luhwani.tweetProcessing.FailedBatchLoader;
 
 public class OutputWriter implements AutoCloseable {
 
@@ -36,6 +37,8 @@ public class OutputWriter implements AutoCloseable {
     private Integer nextExpectedBatchNumber;
     private final TreeMap<Integer, AnalysisResult> pending;
     private final Set<Integer> failedBatchNumbers;
+    private final boolean updateCheckpoint;
+    private Checkpoint lastWrittenCheckpoint;
 
     private static final ObjectMapper objectMapper = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -53,7 +56,8 @@ public class OutputWriter implements AutoCloseable {
             .resolve("output/output.csv");
 
     public OutputWriter(ExecutorService executor,
-            BlockingQueue<QueueEvent<AnalysisResult>> outputQueue, Set<Integer> failedBatchNumbers) throws IOException {
+            BlockingQueue<QueueEvent<AnalysisResult>> outputQueue, Set<Integer> failedBatchNumbers,
+            boolean updateCheckpoint) throws IOException {
         this.outputQueue = outputQueue;
         this.executor = executor;
         this.writer = Files.newBufferedWriter(OUTPUT_PATH, StandardCharsets.UTF_8,
@@ -61,6 +65,7 @@ public class OutputWriter implements AutoCloseable {
                 StandardOpenOption.APPEND);
         this.pending = new TreeMap<>();
         this.failedBatchNumbers = failedBatchNumbers;
+        this.updateCheckpoint = updateCheckpoint;
     }
 
     public static Checkpoint loadCheckpoint() throws IOException {
@@ -128,6 +133,17 @@ public class OutputWriter implements AutoCloseable {
         }
     }
 
+    public Checkpoint lastWrittenCheckpoint() {
+        return lastWrittenCheckpoint;
+    }
+
+    public static void updateCheckpointIfAhead(Checkpoint candidate) throws IOException {
+        Checkpoint current = loadCheckpoint();
+        if (candidate != null && candidate.lastCompletedBatchNumber() > current.lastCompletedBatchNumber()) {
+            objectMapper.writeValue(CHECKPOINT_PATH.toFile(), candidate);
+        }
+    }
+
     public void handleResult() throws Exception {
         while (true) {
             QueueEvent<AnalysisResult> event = outputQueue.poll(3, TimeUnit.SECONDS);
@@ -135,10 +151,20 @@ public class OutputWriter implements AutoCloseable {
                 continue;
             }
             if (event instanceof QueueEvent.End) {
+                if (!updateCheckpoint) {
+                    for (AnalysisResult result : pending.values()) {
+                        write(result);
+                    }
+                    pending.clear();
+                }
                 break;
             }
             QueueEvent.Item<AnalysisResult> item = (Item<AnalysisResult>) event;
             AnalysisResult result = item.value();
+            if (!updateCheckpoint) {
+                pending.put(result.batchNumber(), result);
+                continue;
+            }
             pending.put(result.batchNumber(), result);
             while (pending.containsKey(nextExpectedBatchNumber)) { // while, not if — drain consecutive ready batches
                 AnalysisResult ready = pending.remove(nextExpectedBatchNumber);
@@ -161,8 +187,40 @@ public class OutputWriter implements AutoCloseable {
             writer.newLine();
         }
         writer.flush();
-        objectMapper.writeValue(CHECKPOINT_PATH.toFile(),
-                new Checkpoint(result.batchNumber(), getLastTweetId(result.results())));
+        Checkpoint checkpoint = new Checkpoint(result.batchNumber(), getLastTweetId(result.results()));
+        if (lastWrittenCheckpoint == null
+                || checkpoint.lastCompletedBatchNumber() > lastWrittenCheckpoint.lastCompletedBatchNumber()) {
+            lastWrittenCheckpoint = checkpoint;
+        }
+        if (updateCheckpoint) {
+            objectMapper.writeValue(CHECKPOINT_PATH.toFile(), checkpoint);
+        } else {
+            removeFailedBatch(result.batchNumber());
+        }
+    }
+
+    private static synchronized void removeFailedBatch(int batchNumber) throws IOException {
+        if (!Files.exists(FailedBatchLoader.FAILED_BATCH_PATH)) {
+            return;
+        }
+        List<String> retained = Files.readAllLines(FailedBatchLoader.FAILED_BATCH_PATH, StandardCharsets.UTF_8)
+                .stream()
+                .filter(line -> {
+                    if (line.isBlank()) {
+                        return false;
+                    }
+                    try {
+                        return objectMapper.readTree(line).path("batchNumber").asInt() != batchNumber;
+                    } catch (IOException e) {
+                        return true;
+                    }
+                })
+                .toList();
+        Path temporaryPath = FailedBatchLoader.FAILED_BATCH_PATH.resolveSibling("failedBatches.jsonl.tmp");
+        Files.write(temporaryPath, retained, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        Files.move(temporaryPath, FailedBatchLoader.FAILED_BATCH_PATH,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     }
 
     private String getLastTweetId(List<TweetDecision> results) {
