@@ -2,6 +2,7 @@ package dev.luhwani.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+/** An {@link AiProvider}s decision and explanation for one tweet. */
 public final class TweetDecision {
     
     private final String tweetId;

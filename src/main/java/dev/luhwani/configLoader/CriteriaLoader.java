@@ -8,6 +8,7 @@ import java.nio.file.Paths;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+/** Locates and validates the criteria file used to audit tweets. */
 public final class CriteriaLoader {
 
 	private static final String DEFAULT_CRITERIA_PATH = "config.example.json";

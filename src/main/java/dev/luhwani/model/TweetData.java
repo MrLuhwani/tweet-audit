@@ -3,6 +3,7 @@ package dev.luhwani.model;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+/** The identifier and text required to evaluate one tweet. */
 public final class TweetData {
 
 	private final String id;

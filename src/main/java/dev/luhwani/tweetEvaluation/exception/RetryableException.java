@@ -2,9 +2,7 @@ package dev.luhwani.tweetEvaluation.exception;
 
 import java.util.Optional;
 
-/**
- * this class represents exceptions that can be retried, i.e they are transient
- */
+/** Indicates a transient provider failure that may succeed on a later attempt. */
 public class RetryableException extends AiProviderException {
 
     public RetryableException(Throwable cause, Optional<Integer> statusCode) {

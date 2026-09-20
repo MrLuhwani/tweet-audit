@@ -11,6 +11,7 @@ import dev.luhwani.model.AnalysisResult;
 import dev.luhwani.model.TweetBatch;
 import dev.luhwani.tweetEvaluation.exception.AiProviderException;
 
+/** Defines the provider contract for turning a tweet batch into decisions. */
 public abstract class AiProvider {
 
     protected final ObjectMapper mapper;

@@ -6,6 +6,7 @@ import java.util.logging.LogManager;
 
 import dev.luhwani.application.TweetAuditApp;
 
+/** Entry point that initializes logging and starts the Tweet Audit application. */
 public final class Main {
 
     static {
@@ -29,6 +30,11 @@ public final class Main {
 
     public static void main(String[] args) {
         TweetAuditApp.run();
+        // After the application finishes running, some google worker
+        // threads are still awake in the JVM. They have no negative
+        // effect on the application, but to exit without waiting for
+        // the worker threads to shutdown, System.exit shuts down
+        // the JVM instantly
         System.exit(1);
     }
 

@@ -1,5 +1,6 @@
 package dev.luhwani.configLoader;
 
+/** Loads the Gemini API key from the {@code GEMINI_API_KEY} environment variable. */
 public final class ApiKeyLoader {
 
     private ApiKeyLoader() {

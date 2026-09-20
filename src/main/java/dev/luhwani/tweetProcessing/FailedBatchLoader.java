@@ -4,48 +4,47 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.luhwani.model.TweetBatch;
 
-public final class FailedBatchLoader {
-
-    public static final Path FAILED_BATCH_PATH = Paths.get("")
-            .toAbsolutePath()
-            .normalize()
-            .resolve("output/failedBatches.jsonl");
+/** Reads previously failed tweet batches from the JSON Lines recovery file. */
+public class FailedBatchLoader {
 
     private final ObjectMapper objectMapper;
-
-    public FailedBatchLoader(ObjectMapper objectMapper) {
+    private final Path failedBatchPath;
+    
+    public FailedBatchLoader(ObjectMapper objectMapper, Path failedBatchPath) {
         this.objectMapper = objectMapper;
+        this.failedBatchPath = failedBatchPath;
     }
 
-    public List<TweetBatch> load() throws IOException {
-        if (!Files.exists(FAILED_BATCH_PATH)) {
-            return List.of();
+    public Map<Integer, TweetBatch> load() throws IOException {
+        if (!Files.exists(failedBatchPath)) {
+            return Map.of();
         }
-        if (!Files.isRegularFile(FAILED_BATCH_PATH) || !Files.isReadable(FAILED_BATCH_PATH)) {
-            throw new IOException("Failed batches file is not readable at: " + FAILED_BATCH_PATH);
+        if (!Files.isRegularFile(failedBatchPath) || !Files.isReadable(failedBatchPath)) {
+            throw new IOException("Failed batches file is not readable at: " + failedBatchPath);
         }
 
-        List<TweetBatch> batches = new ArrayList<>();
-        List<String> lines = Files.readAllLines(FAILED_BATCH_PATH, StandardCharsets.UTF_8);
+        Map<Integer, TweetBatch> batchNumToBatchMap = new HashMap<>();
+        List<String> lines = Files.readAllLines(failedBatchPath, StandardCharsets.UTF_8);
         for (int lineNumber = 0; lineNumber < lines.size(); lineNumber++) {
             String line = lines.get(lineNumber).trim();
             if (line.isEmpty()) {
                 continue;
             }
             try {
-                batches.add(objectMapper.readValue(line, TweetBatch.class));
+                TweetBatch batch = objectMapper.readValue(line, TweetBatch.class);
+                batchNumToBatchMap.put(batch.batchNumber(), batch);
             } catch (IOException | RuntimeException e) {
                 throw new IOException("Could not parse failed batch on line " + (lineNumber + 1), e);
             }
         }
-        return List.copyOf(batches);
+        return Map.copyOf(batchNumToBatchMap);
     }
 }

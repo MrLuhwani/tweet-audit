@@ -1,25 +1,19 @@
 package dev.luhwani.tweetEvaluation;
 
-import java.io.BufferedWriter;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.luhwani.model.AnalysisResult;
 import dev.luhwani.model.QueueEvent;
@@ -27,8 +21,16 @@ import dev.luhwani.model.TweetBatch;
 import dev.luhwani.tweetEvaluation.exception.BatchException;
 import dev.luhwani.tweetEvaluation.exception.RetryableException;
 
+/**
+ * This class is responsible for executing the evaluation of tweet batches using
+ * an AI provider. It manages concurrent execution, handles retries for
+ * transient failures, and routes successful results and failed batches to their
+ * respective queues. The class also provides a summary of the evaluation
+ * process, including the number of succeeded and remaining batches.
+ */
 public final class RequestExecutor implements AutoCloseable {
 
+    /** Reports the number of batches that completed successfully. */
     public final class EvaluationSummary {
         private final AtomicInteger succeeded = new AtomicInteger();
         private final AtomicInteger remaining = new AtomicInteger();
@@ -38,131 +40,77 @@ public final class RequestExecutor implements AutoCloseable {
         }
     }
 
-    private final class BatchFailureAppender {
-
-        private final ObjectMapper objectMapper;
-        private final Path FAILED_BATCH_PATH = Paths
-                .get("")
-                .toAbsolutePath()
-                .normalize()
-                .resolve("output/failedBatches.jsonl");
-        private volatile boolean running = true;
-        private Thread failureWriterThread;
-        private final BlockingQueue<BatchException> failureQueue = new LinkedBlockingQueue<>();
-        private final Set<Integer> failedBatchNumbers;
-
-        private BatchFailureAppender(ObjectMapper objectMapper, Set<Integer> failedBatchNumbers) {
-            this.objectMapper = objectMapper;
-            this.failedBatchNumbers = failedBatchNumbers;
-        }
-
-        private void startFailureWriter() {
-            failureWriterThread = new Thread(() -> {
-                try (BufferedWriter writer = new BufferedWriter(
-                        new FileWriter(failureAppender.FAILED_BATCH_PATH.toString(), true))) {
-                    while (running || !failureQueue.isEmpty()) {
-                        BatchException e = failureQueue.poll(500, TimeUnit.MILLISECONDS);
-                        if (e != null) {
-                            failureAppender.append(e, writer);
-                            failedBatchNumbers.add(e.getFailedBatch().batchNumber());
-                        }
-                    }
-                } catch (IOException | InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new RuntimeException(e);
-                }
-            });
-            failureWriterThread.start();
-        }
-
-        private synchronized void append(BatchException e, BufferedWriter writer) throws IOException {
-            TweetBatch batch = e.getFailedBatch();
-            LOGGER.severe(
-                    "Batch " + batch.batchNumber()
-                            + " failed, FirstTweetId= "
-                            + batch.tweets().getFirst().id()
-                            + " Failed at: " + Instant.now()
-                            + "\n Error name: " + e.getClass().getName()
-                            + " Error Msg: " + e.getMessage());
-            if (!Files.exists(FAILED_BATCH_PATH)) {
-                Files.createDirectories(FAILED_BATCH_PATH.getParent());
-            }
-            String jsonLine = objectMapper.writeValueAsString(batch);
-            writer.write(jsonLine);
-            writer.newLine();
-            writer.flush();
-        }
-
-        private void stopFailureWriter() throws InterruptedException {
-            running = false;
-            failureWriterThread.join();
-        }
-
-    }
-
+    private static final Logger LOGGER = Logger.getLogger(RequestExecutor.class.getName());
     private final AiProvider provider;
     private final ExecutorService executor;
-    private final BlockingQueue<QueueEvent<TweetBatch>> inputQueue;
-    private final BlockingQueue<QueueEvent<AnalysisResult>> outputQueue;
-    private List<Future<?>> tasks;
-    private final EvaluationSummary evaluationSummary;
-    private final BatchFailureAppender failureAppender;
-    private final boolean persistFailures;
-    private final Integer MAX_ATTEMPTS = 3;
-    private static final Logger LOGGER = Logger.getLogger(RequestExecutor.class.getName());
+    private final EvaluationSummary evaluationSummary = new EvaluationSummary();
+    private final Integer MAX_RETRY_ATTEMPTS = 3;
+    private final Integer workerThreads;
+
+    private final BlockingQueue<QueueEvent<TweetBatch>> batchQueue;
+    private final BlockingQueue<QueueEvent<AnalysisResult>> resultQueue;
+    private final BlockingQueue<QueueEvent<TweetBatch>> failureQueue;
+    private final Map<Integer, String> failedBatchToLastTweetMap;
+
+    private List<Future<?>> tasks = new ArrayList<>();
+
     private volatile Exception lastBatchException = new RuntimeException("No BatchException has been thrown yet");
 
-    public RequestExecutor(AiProvider provider, ExecutorService executor,
-            BlockingQueue<QueueEvent<TweetBatch>> inputQueue,
-            BlockingQueue<QueueEvent<AnalysisResult>> outputQueue, ObjectMapper objectMapper,
-            Set<Integer> failedBatchNumbers) {
-        this(provider, executor, inputQueue, outputQueue, objectMapper, failedBatchNumbers, true);
-    }
+    public RequestExecutor(BlockingQueue<QueueEvent<TweetBatch>> batchQueue,
+            BlockingQueue<QueueEvent<AnalysisResult>> resultQueue,
+            BlockingQueue<QueueEvent<TweetBatch>> failureQueue, Map<Integer, String> failedBatchToLastTweetMap,
+            Integer workerThreads, AiProvider provider) {
 
-    public RequestExecutor(AiProvider provider, ExecutorService executor,
-            BlockingQueue<QueueEvent<TweetBatch>> inputQueue,
-            BlockingQueue<QueueEvent<AnalysisResult>> outputQueue, ObjectMapper objectMapper,
-            Set<Integer> failedBatchNumbers, boolean persistFailures) {
+        this.workerThreads = workerThreads;
         this.provider = provider;
-        this.executor = executor;
-        this.inputQueue = inputQueue;
-        this.outputQueue = outputQueue;
-        this.failureAppender = new BatchFailureAppender(objectMapper, failedBatchNumbers);
-        this.persistFailures = persistFailures;
-        this.evaluationSummary = new EvaluationSummary();
-        evaluationSummary.remaining.set(inputQueue.size());
-        this.tasks = new ArrayList<>();
+        this.executor = Executors.newFixedThreadPool(workerThreads);
+        this.batchQueue = batchQueue;
+        this.resultQueue = resultQueue;
+        this.failureQueue = failureQueue;
+        this.failedBatchToLastTweetMap = failedBatchToLastTweetMap;
+        evaluationSummary.remaining.set(batchQueue.size());
     }
 
-    public void start(int workerCount) {
+    public void start(boolean isRetrying) {
         AtomicInteger maxBatchExceptions = new AtomicInteger();
-        int maxBatchExceptionInt = 3;
+        int maxBatchExceptionInt = 5;
         maxBatchExceptions.set(maxBatchExceptionInt);
-        failureAppender.startFailureWriter();
-        for (int i = 0; i < workerCount; i++) {
+        for (int i = 0; i < workerThreads; i++) {
             Future<?> task = executor.submit(() -> {
                 QueueEvent<TweetBatch> event;
-                while ((event = inputQueue.poll()) != null) {
+                while ((event = batchQueue.poll()) != null) {
                     QueueEvent.Item<TweetBatch> item = (QueueEvent.Item<TweetBatch>) event;
                     TweetBatch batch = item.value();
                     try {
                         AnalysisResult result = evaluateTweets(batch);
-                        outputQueue.add(new QueueEvent.Item<>(result));
+                        resultQueue.add(new QueueEvent.Item<>(result));
                         LOGGER.info(
                                 "Batch " + result.batchNumber()
-                                        + " succeded, FirstTweetId= "
-                                        + result.results().getFirst().tweetId()
+                                        + " succeded, LastTweetId= "
+                                        + result.results().getLast().tweetId()
                                         + " Completed at: " + Instant.now());
                         evaluationSummary.succeeded.incrementAndGet();
+                        if (maxBatchExceptions.get() < maxBatchExceptionInt) {
+                            maxBatchExceptions.set(maxBatchExceptionInt);
+                        }
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         throw new RuntimeException(e);
                     } catch (BatchException e) {
-                        failureAppender.failedBatchNumbers.add(e.getFailedBatch().batchNumber());
-                        if (persistFailures) {
-                            failureAppender.failureQueue.add(e);
+                        LOGGER.severe(
+                                "Batch " + batch.batchNumber()
+                                        + " failed, LastTweetId= "
+                                        + batch.tweets().getLast().id()
+                                        + " Failed at: " + Instant.now()
+                                        + "\n Error name: " + e.getClass().getName()
+                                        + " Error Msg: " + e.getMessage());
+                        if (!isRetrying) {
+                            failedBatchToLastTweetMap.put(batch.batchNumber(), batch.tweets().getLast().id());
+                            failureQueue.add(new QueueEvent.Item<>(batch));
                         }
-                        if (lastBatchException.getMessage().equals(e.getMessage())) {
+
+                        if ((lastBatchException.getClass() + lastBatchException.getMessage())
+                                .equals(e.getClass() + e.getMessage())) {
                             maxBatchExceptions.decrementAndGet();
                         } else {
                             lastBatchException = e;
@@ -177,7 +125,8 @@ public final class RequestExecutor implements AutoCloseable {
                         throw new RuntimeException(e);
                     } finally {
                         if (evaluationSummary.remaining.decrementAndGet() == 0) {
-                            outputQueue.add(QueueEvent.End.instance());
+                            resultQueue.add(QueueEvent.End.instance());
+                            failureQueue.add(QueueEvent.End.instance());
                         }
 
                     }
@@ -187,6 +136,7 @@ public final class RequestExecutor implements AutoCloseable {
         }
     }
 
+    /** Waits for all worker tasks and returns their success summary. */
     public EvaluationSummary awaitCompletion() throws ExecutionException {
         try {
             for (Future<?> task : tasks) {
@@ -199,10 +149,14 @@ public final class RequestExecutor implements AutoCloseable {
         return evaluationSummary;
     }
 
-    public AnalysisResult evaluateTweets(TweetBatch batch) throws InterruptedException, Exception {
-        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    private AnalysisResult evaluateTweets(TweetBatch batch) throws InterruptedException, Exception {
+        for (int attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
             try {
+                Instant start = Instant.now();
+                // TODO: remove this once you figure out the average time requests are made
+                System.out.println("batch" + batch.batchNumber() + ": " + start);
                 AnalysisResult result = provider.analyze(batch);
+                System.out.println("Time: " + Duration.between(start, Instant.now()));
                 return result;
             } catch (RetryableException e) {
                 System.err.printf(
@@ -210,21 +164,22 @@ public final class RequestExecutor implements AutoCloseable {
                         Thread.currentThread().getName(),
                         batch.batchNumber(),
                         attempt,
-                        MAX_ATTEMPTS,
+                        MAX_RETRY_ATTEMPTS,
                         e.getMessage());
-                if (attempt == MAX_ATTEMPTS) {
+                if (attempt == MAX_RETRY_ATTEMPTS) {
                     throw new BatchException(e, e.getStatusCode(), batch);
                 }
-                RetryPolicy.awaitRetry(e, attempt, MAX_ATTEMPTS);
+                RetryPolicy.awaitRetry(e, attempt, MAX_RETRY_ATTEMPTS);
             }
         }
-        throw new RuntimeException("Max amount of request attempts reached");
+        throw new BatchException(new RuntimeException("Max amount of request attempts reached"), Optional.empty(),
+                batch);
     }
 
     @Override
     public void close() throws Exception {
-        failureAppender.stopFailureWriter();
         executor.shutdown();
+        executor.awaitTermination(2000,TimeUnit.MILLISECONDS);
     }
 
 }

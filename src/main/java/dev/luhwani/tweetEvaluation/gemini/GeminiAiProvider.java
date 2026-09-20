@@ -27,6 +27,7 @@ import dev.luhwani.tweetEvaluation.exception.FatalException;
 import dev.luhwani.tweetEvaluation.exception.RetryableException;
 import okhttp3.OkHttpClient;
 
+/** Uses Google's Gemini API to classify tweets against the configured criteria. */
 public class GeminiAiProvider extends AiProvider {
 
     // TODO: make model choice more confifgurable
@@ -98,7 +99,7 @@ public class GeminiAiProvider extends AiProvider {
         batchJson.set("tweets", tweets);
 
         return String.format(
-                "Evaluate every tweet against the supplied deletion criteria. \n Rules: \n1. Decision must be either KEEP or DELETE. \n2. Preserve tweet ordering. \n3. Give reasons for your decision \n Deletion Criteria: \n %s \n Tweet Batch: \n %s \n",
+                "Evaluate every tweet against the supplied deletion criteria. \n Rules: \n1. Decision must be either KEEP or DELETE. \n2. Preserve tweet ordering. \n3. Give reasons for your decision \n4. Never invent tweet ids. \n Deletion Criteria: \n %s \n Tweet Batch: \n %s \n",
                 mapper.writerWithDefaultPrettyPrinter().writeValueAsString(criteria),
                 mapper.writerWithDefaultPrettyPrinter().writeValueAsString(batchJson));
     }

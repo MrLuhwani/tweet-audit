@@ -4,9 +4,10 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
+/** The decisions returned by an {@link Aiprovider} for one tweet batch. */
 public final class AnalysisResult {
 
-    private final int batchNumber;
+    private final Integer batchNumber;
     private final List<TweetDecision> results;
 
     @JsonCreator
@@ -23,7 +24,7 @@ public final class AnalysisResult {
         this.results = List.copyOf(results);
     }
 
-    public int batchNumber() {
+    public Integer batchNumber() {
         return batchNumber;
     }
 

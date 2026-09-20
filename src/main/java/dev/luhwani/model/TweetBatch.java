@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
+/** An immutable, numbered group of tweets sent to the evaluation provider. */
 public final class TweetBatch {
     private final int batchNumber;
     private final List<TweetData> tweets;

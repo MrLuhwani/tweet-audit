@@ -3,6 +3,7 @@ package dev.luhwani.tweetEvaluation.exception;
 import java.util.Optional;
 import java.util.Set;
 
+/** Base exception for provider failures classified by retry behavior. */
 public abstract class AiProviderException extends Exception {
 
     private final Optional<Integer> statusCode;

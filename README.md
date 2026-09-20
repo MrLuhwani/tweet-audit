@@ -9,6 +9,7 @@ The first project in [Ben X's backend engineering path](https://github.com/benx4
 - [Installations](#installations)
 - [Configuration](#configuration)
 - [Usage Instructions](#usage-instructions)
+- [Sorting Results by Batch](#sorting-results-by-batch)
 - [Roadmap](#roadmap)
 
 ## Things Worth Noting
@@ -26,7 +27,7 @@ These are the things you need to run this software application:
 - [Java 11](https://www.oracle.com/java/technologies/javase-jdk11-downloads.html)
 - [Maven 3.9+](https://maven.apache.org/download.cgi)
 - Download your X archive from Settings → Your Account → Download an archive of your data (takes 24-48 hours)
-- Get a _free_ Gemini Api Key from [Google Ai Studio](https://aistudio.google.com/app/apikey)
+- Get a Gemini Api Key from [Google Ai Studio](https://aistudio.google.com/app/apikey)
 - Create a file named `criteria.json` and define your criteria there
 
 ## Installations
@@ -54,15 +55,18 @@ Run the app
 mvn compile exec:java
 ```
 
+After the first time you run the tool, on subsequent runs, you may skip the `compile` keyword, as the source code has not been changed, so there is no need to recompile your code again.
+
 ### Other Implementation Notes
 
-- Tweets are processed in batches of tweets. The size of the batches aren't configurable yet.
+- Tweets are processed in batches of 15 tweets. The batch size is not configurable yet.
 - The tool uses `gemini-3.5-flash-lite` internally. The model choice is not configurable for now.
 - Analysis results are created in `output\output.csv`.
 - If the tool closes for any reason, the CLI creates a `checkpoint.json` in the `output` folder.
+- The `checkpoint` represents where the tool has reached in the processing, both for failed, and for successful tweet batches.
 
 ```json
-{"last_completed_batch_number":134,"last_tweet_id":"2038604355905929653","empty":false}
+{"successfulBatches":[1,2,3,4,5,6,10,11,12,13,14,15,16],"failedBatches":[7,8,9],"lastProcessedBatch":16,"lastProcessedTweet":"20686821481932295099","empty":false}
 ```
 
 - When the tool is reloaded, it checks the checkpoint file, and continues from where it stopped
@@ -74,15 +78,28 @@ mvn compile exec:java
 {"batchNumber":37,"tweets":[{"id":"1874645171535234831","text":"Sentiment is not…"},{"id":"2074644957747450308","text":"Smirking…"}]}
 ```
 
-- On next run, the tool firstly tries to process failed batches before it resumes unprocessed tweet batches.
+- On the next app run, the tool firstly retries the failed batches, before continuing with other unprocessed batches
+
+### Sorting Results by Batch
+
+During a normal run, results are written in batch order. When a run retries failed batches, those retry results are appended as they finish, so `output/output.csv` may not be sorted by `batch_number`.
+
+To sort the file in Microsoft Excel:
+
+1. Open `output/output.csv` in Excel.
+2. Select the full table, including the header row.
+3. On the `Data` tab, choose `Sort`.
+4. Select `batch_number` as the sort column and choose `Smallest to Largest`.
+
+Keep the header row enabled when prompted so that `batch_number` is treated as a column name. If you use another spreadsheet program, sort the complete CSV table by the numeric `batch_number` column rather than sorting only one column.
 
 An example of how the output folder looks like
 ```csv
-tweet_link,decision,reason
-https://x.com/i/status/1111111111111111111,KEEP,"Polite and casual conversation, complies with all criteria."
-https://x.com/i/status/1223456765434565643,KEEP,Normal bug report / product feedback tweet.
-https://x.com/i/status/1236464576879898865,DELETE,"Mentions Web3, which is included in topics_to_exclude."
-https://x.com/i/status/2838488457757477382,KEEP,Harmless personal thought.
+batch_number,tweet_link,decision,reason
+1,https://x.com/i/status/1111111111111111111,KEEP,"Polite and casual conversation, complies with all criteria."
+1,https://x.com/i/status/1223456765434565643,KEEP,Normal bug report / product feedback tweet.
+2,https://x.com/i/status/1236464576879898865,DELETE,"Mentions Web3, which is included in topics_to_exclude."
+3,https://x.com/i/status/2838488457757477382,KEEP,Harmless personal thought.
 ```
 
 ## Filtering Results

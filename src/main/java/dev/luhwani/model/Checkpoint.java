@@ -1,39 +1,51 @@
 package dev.luhwani.model;
 
+import java.util.Set;
+
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+/** Stores completed and failed batches so an audit can resume safely. */
 public final class Checkpoint {
 
-    private final int lastCompletedBatchNumber;
-    private final String lastTweetId;
+    private final Set<Integer> successfulBatches;
+    private final Set<Integer> failedBatches;
+    private final int lastProcessedBatch;
+    private final String lastProcessedTweet;
 
     @JsonCreator
     public Checkpoint(
-            @JsonProperty("last_completed_batch_number") int lastCompletedBatchNumber,
-            @JsonProperty("last_tweet_id") String lastTweetId) {
-        this.lastCompletedBatchNumber = lastCompletedBatchNumber;
-        this.lastTweetId = lastTweetId;
+            @JsonProperty("successful_batches") Set<Integer> successfulBatches,
+            @JsonProperty("failed_batches") Set<Integer> failedBatches,
+            @JsonProperty("last_processed_batch") int lastProcessedBatch,
+            @JsonProperty("last_processed_tweet") String lastProcessedTweet) {
+        this.successfulBatches = successfulBatches;
+        this.failedBatches = failedBatches;
+        this.lastProcessedBatch = lastProcessedBatch;
+        this.lastProcessedTweet = lastProcessedTweet;
     }
 
     public static Checkpoint empty() {
-        return new Checkpoint(0, "");
+        return new Checkpoint(Set.of(), Set.of(), 0, "");
     }
 
-    @JsonProperty("last_completed_batch_number")
-    public int lastCompletedBatchNumber() {
-        return lastCompletedBatchNumber;
+    public Set<Integer> getSuccessfulBatches() {
+        return successfulBatches;
     }
 
-    @JsonProperty("last_tweet_id")
-    public String lastTweetId() {
-        return lastTweetId;
+    public Set<Integer> getFailedBatches() {
+        return failedBatches;
+    }
+
+    public int getLastProcessedBatch() {
+        return lastProcessedBatch;
+    }
+
+    public String getLastProcessedTweet() {
+        return lastProcessedTweet;
     }
 
     public boolean isEmpty() {
-        if (lastCompletedBatchNumber == 0 && lastTweetId.isEmpty()) {
-            return true;
-        }
-        return false;
+        return successfulBatches.isEmpty() && failedBatches.isEmpty() && (lastProcessedBatch == 0) && lastProcessedTweet.isBlank();
     }
 }
