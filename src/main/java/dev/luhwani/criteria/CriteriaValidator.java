@@ -14,7 +14,7 @@ public final class CriteriaValidator {
 
     private final ObjectMapper objectMapper;
 
-    public CriteriaValidator() {
+    CriteriaValidator() {
         this(new ObjectMapper());
     }
 
@@ -24,7 +24,7 @@ public final class CriteriaValidator {
 
     public Criteria validate(Path criteriaPath) throws FatalException {
         if (criteriaPath == null) {
-            throw new FatalException("Criteria path cannot be null");
+            throw new IllegalArgumentException("Criteria path cannot be null");
         }
 
         try {

@@ -10,19 +10,31 @@ import dev.luhwani.model.TweetData;
 public final class TweetBatchFactory {
 
     // TODO: make more configurable
-    private static final int BATCH_SIZE = 5;
+    private static final int BATCH_SIZE = 60;
 
     private TweetBatchFactory() {
     }
 
-    public static List<TweetBatch> createBatches(List<TweetData> tweets, int lastCompletedBatch) {
+    // for easy testablility, this method is package-private
+    static List<TweetBatch> createBatches(List<TweetData> tweets, int batchSize) {
+        if (batchSize <= 0) {
+            throw new IllegalArgumentException("Batch Sizes must be positive");
+        }
+        if (tweets == null) {
+            throw new IllegalArgumentException("tweets cannot be null");
+        }
+        if (tweets.isEmpty()) {
+            throw new IllegalArgumentException("Cannot convert empty tweet list to batches");
+        }
         List<TweetBatch> batches = new ArrayList<>();
-        int start = lastCompletedBatch * BATCH_SIZE;
-        for (int batchNum = lastCompletedBatch + 1; start < tweets.size(); start += BATCH_SIZE, batchNum++) {
-            int end = Math.min(start + BATCH_SIZE, tweets.size());
+        for (int batchNum = 1, start = 0; start < tweets.size(); start += batchSize, batchNum++) {
+            int end = Math.min(start + batchSize, tweets.size());
             batches.add(new TweetBatch(batchNum, tweets.subList(start, end)));
         }
-        batches.sort((b1, b2) -> Integer.compare(b1.batchNumber(), b2.batchNumber()));
         return List.copyOf(batches);
+    }
+
+    public static List<TweetBatch> createBatches(List<TweetData> tweets) {
+        return createBatches(tweets, BATCH_SIZE);
     }
 }

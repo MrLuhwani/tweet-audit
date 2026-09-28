@@ -1,8 +1,10 @@
 package dev.luhwani.model;
 
+import java.util.HashSet;
 import java.util.Set;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /** Stores completed and failed batches so an audit can resume safely. */
@@ -26,7 +28,7 @@ public final class Checkpoint {
     }
 
     public static Checkpoint empty() {
-        return new Checkpoint(Set.of(), Set.of(), 0, "");
+        return new Checkpoint(new HashSet<>(), new HashSet<>(), 0, "");
     }
 
     public Set<Integer> getSuccessfulBatches() {
@@ -45,6 +47,7 @@ public final class Checkpoint {
         return lastProcessedTweet;
     }
 
+    @JsonIgnore
     public boolean isEmpty() {
         return successfulBatches.isEmpty() && failedBatches.isEmpty() && (lastProcessedBatch == 0) && lastProcessedTweet.isBlank();
     }

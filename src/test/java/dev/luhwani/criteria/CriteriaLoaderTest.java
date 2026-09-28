@@ -37,4 +37,13 @@ class CriteriaLoaderTest {
 
         assertThrows(RuntimeException.class, () -> CriteriaLoader.load(criteriaPath, defaultPath));
     }
+
+    @Test
+    void throwsWhenAnyPathIsNull() {
+        Path criteriaPath = tempDir.resolve("criteria.json");
+        Path defaultPath = tempDir.resolve("config.example.json");
+
+        assertThrows(IllegalArgumentException.class, () -> CriteriaLoader.load(null, defaultPath));
+        assertThrows(IllegalArgumentException.class, () -> CriteriaLoader.load(criteriaPath, null));
+    }
 }

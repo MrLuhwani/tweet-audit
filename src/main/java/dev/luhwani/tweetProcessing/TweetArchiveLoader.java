@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.io.PushbackReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -13,34 +12,41 @@ import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import dev.luhwani.configuration.AuditPaths;
+import dev.luhwani.error.FatalException;
 import dev.luhwani.model.TweetData;
 
-/** Parses X's JavaScript tweet archive and returns tweets after a checkpoint. */
+/**
+ * Parses X's JavaScript tweet archive and returns tweets.
+ */
 public final class TweetArchiveLoader {
 
-    private static final Path TWEET_ARCHIVE_PATH = Paths
-            .get("")
-            .toAbsolutePath()
-            .normalize()
-            .resolve("data/tweets.js");
+    private static final Path TWEET_ARCHIVE_PATH = AuditPaths.TWEETS_PATH;
     private final ObjectMapper objectMapper;
+    private final Path archivePath;
 
     public TweetArchiveLoader(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+        this(objectMapper, TWEET_ARCHIVE_PATH);
     }
 
-    public List<TweetData> load(String lastProcessedTweet) throws IOException {
-        if (!Files.exists(TWEET_ARCHIVE_PATH)) {
-            throw new IOException("Tweet archive not found at path: " + TWEET_ARCHIVE_PATH);
+    // for easy testability
+    TweetArchiveLoader(ObjectMapper objectMapper, Path archivePath) {
+        if (objectMapper == null) {
+            throw new IllegalArgumentException("Object mapper must not be null");
         }
-        if (!Files.isRegularFile(TWEET_ARCHIVE_PATH)) {
-            throw new IOException("Could not read tweet data at: " + TWEET_ARCHIVE_PATH);
+        if (archivePath == null) {
+            throw new IllegalArgumentException("Archive path must not be null");
         }
-        if (!Files.isReadable(TWEET_ARCHIVE_PATH)) {
-            throw new IOException("Tweet archive is not readable at path: " + TWEET_ARCHIVE_PATH);
+        this.objectMapper = objectMapper;
+        this.archivePath = archivePath;
+    }
+
+    public List<TweetData> load() {
+        if (!Files.exists(archivePath)) {
+            throw new FatalException("Tweet archive not found at path: " + archivePath);
         }
 
-        try (PushbackReader reader = new PushbackReader(Files.newBufferedReader(TWEET_ARCHIVE_PATH), 1)) {
+        try (PushbackReader reader = new PushbackReader(Files.newBufferedReader(archivePath), 1)) {
             int ch;
 
             /**
@@ -57,7 +63,7 @@ public final class TweetArchiveLoader {
             }
 
             if (ch == -1) {
-                throw new IOException("Tweets array not found");
+                throw new FatalException("Tweets array not found");
             }
 
             JsonParser parser = objectMapper
@@ -65,17 +71,22 @@ public final class TweetArchiveLoader {
                     .createParser(reader);
             JsonToken token = parser.nextToken();
             if (token != JsonToken.START_ARRAY) {
-                throw new IOException("Tweets array not found");
+                throw new FatalException("Tweets array not found");
             }
 
             int tweetCount = 0;
             List<TweetData> tweets = new ArrayList<>();
-            boolean checkpointFound = false;
-            if (lastProcessedTweet.isEmpty()) {
-                checkpointFound = true;
-            }
             while ((token = parser.nextToken()) != JsonToken.END_ARRAY) {
+                if (token == null) {
+                    throw new IOException("Unexpected end of tweet archive");
+                }
                 JsonNode wrapper = objectMapper.readTree(parser);
+                if (wrapper == null || !wrapper.isObject()) {
+                    System.out.println("[WARN] Tweet " + (tweetCount + 1)
+                            + " is not an object. Skipping tweet.");
+                    tweetCount++;
+                    continue;
+                }
                 JsonNode tweetNode = wrapper.get("tweet");
 
                 if (tweetNode == null || tweetNode.isNull()) {
@@ -92,14 +103,6 @@ public final class TweetArchiveLoader {
                     continue;
                 }
 
-                if (!checkpointFound) {
-                    if (lastProcessedTweet.equals(id)) {
-                        checkpointFound = true;
-                    }
-                    tweetCount++;
-                    continue;
-                }
-
                 String text = nullableText(tweetNode, "full_text");
                 if (text == null) {
                     System.out.println("[WARN] Tweet " + (tweetCount + 1) + " is missing text. Skipping tweet.");
@@ -109,12 +112,11 @@ public final class TweetArchiveLoader {
                 tweets.add(new TweetData(id, text));
                 tweetCount++;
             }
-
-            if (!checkpointFound) {
-                throw new IllegalStateException(
-                        "Checkpoint tweet " + lastProcessedTweet + " was not found in the tweet archive.");
-            }
             return tweets;
+        } catch ( IOException e) {
+            throw new FatalException(
+                    "Failed to read tweet archive: " + archivePath,
+                    e);
         }
 
     }

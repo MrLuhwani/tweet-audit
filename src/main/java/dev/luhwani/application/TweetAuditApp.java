@@ -33,8 +33,12 @@ import dev.luhwani.tweetProcessing.CheckpointResolver;
 import dev.luhwani.tweetProcessing.FailedBatchLoader;
 import dev.luhwani.tweetProcessing.TweetArchiveLoader;
 import dev.luhwani.tweetProcessing.TweetBatchFactory;
+import dev.luhwani.tweetProcessing.TweetFilter;
 
-/** Coordinates archive loading, batch evaluation, checkpointing, and output writing. */
+/**
+ * Coordinates archive loading, batch evaluation, checkpointing, and output
+ * writing.
+ */
 public final class TweetAuditApp {
 
 	private TweetAuditApp() {
@@ -118,8 +122,7 @@ public final class TweetAuditApp {
 	 */
 	private static List<TweetBatch> loadFailedBatches() throws IOException {
 		Map<Integer, TweetBatch> failedBatches = new FailedBatchLoader(OBJECT_MAPPER, FAILED_BATCH_PATH).load();
-		Checkpoint checkpoint = new CheckpointResolver(CHECKPOINT_PATH, OUTPUT_PATH, FAILED_BATCH_PATH, OBJECT_MAPPER)
-				.load();
+		Checkpoint checkpoint = new CheckpointResolver(OBJECT_MAPPER).load();
 		for (Integer batchNumber : checkpoint.getFailedBatches()) {
 			if (!failedBatches.containsKey(batchNumber)) {
 				throw new IllegalStateException("Checkpoint references missing failed batch: " + batchNumber);
@@ -142,20 +145,10 @@ public final class TweetAuditApp {
 	 * @throws InterruptedException
 	 */
 	private static List<TweetBatch> processTweets() throws IOException, InterruptedException {
-
-		Checkpoint checkpoint = new CheckpointResolver(CHECKPOINT_PATH, OUTPUT_PATH, FAILED_BATCH_PATH, OBJECT_MAPPER)
-				.load();
-		List<TweetData> tweets;
-		if (checkpoint.isEmpty()) {
-			tweets = new TweetArchiveLoader(OBJECT_MAPPER).load("");
-		} else {
-			tweets = new TweetArchiveLoader(OBJECT_MAPPER).load(checkpoint.getLastProcessedTweet());
-		}
-		if (tweets.isEmpty()) {
-			return List.of();
-		}
-		int lastCompletedBatch = checkpoint.getLastProcessedBatch();
-		List<TweetBatch> tweetBatches = TweetBatchFactory.createBatches(tweets, lastCompletedBatch);
+		List<TweetData> tweets = new TweetArchiveLoader(OBJECT_MAPPER).load();
+		List<TweetBatch> tweetBatches = TweetBatchFactory.createBatches(tweets);
+		Checkpoint checkpoint = new CheckpointResolver(OBJECT_MAPPER).load();
+		tweetBatches = TweetFilter.filter(tweetBatches, checkpoint);
 		LOGGER.info(
 				"Parsed " + tweets.size() + " tweets\n" +
 						"Resuming from batch " + tweetBatches.getFirst().batchNumber());
@@ -167,8 +160,8 @@ public final class TweetAuditApp {
 	 *
 	 * @param tweetBatches
 	 * @param config
-	 * @param isRetrying to identify if we are trying to evaluate a
-	 * previously failed batch or not
+	 * @param isRetrying   to identify if we are trying to evaluate a
+	 *                     previously failed batch or not
 	 * @see AiProvider
 	 * @see RequestExecutor
 	 * @see OutputWriter

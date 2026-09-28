@@ -21,7 +21,7 @@ class CriteriaValidatorTest {
 
     @Test
     void throwsWhenPathIsNull() {
-        assertThrows(FatalException.class, () -> validator.validate(null));
+        assertThrows(IllegalArgumentException.class, () -> validator.validate(null));
     }
 
     @Test
@@ -85,23 +85,23 @@ class CriteriaValidatorTest {
     }
 
     @Test
-void acceptsNonEmptyValidJson() throws Exception {
-    Path path = writeCriteria("""
-            {
-              "criteria": "example"
+    void acceptsNonEmptyValidJson() throws Exception {
+        Path path = writeCriteria("""
+                {
+                  "criteria": "example"
+                }
+                """);
+
+        ObjectMapper mapper = new ObjectMapper() {
+            @Override
+            public <T> T treeToValue(TreeNode node, Class<T> valueType)
+                    throws JsonProcessingException {
+                return null;
             }
-            """);
+        };
 
-    ObjectMapper mapper = new ObjectMapper() {
-        @Override
-        public <T> T treeToValue(TreeNode node, Class<T> valueType)
-                throws JsonProcessingException {
-            return null;
-        }
-    };
-
-    assertDoesNotThrow(() -> new CriteriaValidator(mapper).validate(path));
-}
+        assertDoesNotThrow(() -> new CriteriaValidator(mapper).validate(path));
+    }
 
     private Path writeCriteria(String contents) throws Exception {
         return Files.writeString(tempDir.resolve("criteria.json"), contents);

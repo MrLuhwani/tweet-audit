@@ -17,10 +17,13 @@ public final class CriteriaLoader {
 	}
 
 	static Path load(Path criteriaPath, Path defaultCriteriaPath) {
+		if (criteriaPath == null || defaultCriteriaPath == null) {
+			throw new IllegalArgumentException("Criteria file and fallback cannot be null");
+		}
+
 		if (Files.exists(criteriaPath)) {
 			return criteriaPath;
 		}
-
 		if (Files.exists(defaultCriteriaPath)) {
 			return defaultCriteriaPath;
 		}

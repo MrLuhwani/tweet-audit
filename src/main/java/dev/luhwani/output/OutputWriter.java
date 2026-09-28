@@ -83,8 +83,7 @@ public final class OutputWriter implements AutoCloseable {
         this.nextExpectedBatchNumber = nextExpectedBatchNumber;
         pending = new TreeMap<>();
         this.successfulRetriedBatches = successfulRetriedBatches;
-        checkpoint = new dev.luhwani.tweetProcessing.CheckpointResolver(checkpointPath, outputPath, failurePath,
-                objectMapper).load();
+        checkpoint = new dev.luhwani.tweetProcessing.CheckpointResolver(objectMapper).load();
     }
 
     /**

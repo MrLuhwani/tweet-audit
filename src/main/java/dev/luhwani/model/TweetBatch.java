@@ -1,19 +1,10 @@
 package dev.luhwani.model;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
 /** An immutable, numbered group of tweets sent to the evaluation provider. */
-public final class TweetBatch {
-    private final int batchNumber;
-    private final List<TweetData> tweets;
-
-    @JsonCreator
-    public TweetBatch(
-        @JsonProperty("batchNumber") int batchNumber, 
-        @JsonProperty("tweets") List<TweetData> tweets
-    ) {
+public record TweetBatch(int batchNumber, List<TweetData> tweets) {
+    public TweetBatch(int batchNumber, List<TweetData> tweets) {
         if (batchNumber < 0) {
             throw new IllegalArgumentException("Batch index cannot be negative");
         }
@@ -22,15 +13,5 @@ public final class TweetBatch {
         }
         this.batchNumber = batchNumber;
         this.tweets = List.copyOf(tweets);
-    }
-
-    @JsonProperty("batchNumber")
-    public int batchNumber() {
-        return batchNumber;
-    }
-
-    @JsonProperty("tweets")
-    public List<TweetData> tweets() {
-        return tweets;
     }
 }
