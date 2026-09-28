@@ -15,8 +15,9 @@ import java.util.logging.Logger;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import dev.luhwani.configLoader.ApiKeyLoader;
-import dev.luhwani.configLoader.CriteriaLoader;
+import dev.luhwani.configuration.ApiKeyLoader;
+import dev.luhwani.configuration.AuditPaths;
+import dev.luhwani.criteria.CriteriaLoader;
 import dev.luhwani.model.AnalysisResult;
 import dev.luhwani.model.Checkpoint;
 import dev.luhwani.model.QueueEvent;
@@ -54,16 +55,9 @@ public final class TweetAuditApp {
 			.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 	private static final Logger LOGGER = Logger.getLogger(TweetAuditApp.class.getName());
 
-	private static final Path CHECKPOINT_PATH = Paths
-			.get("")
-			.toAbsolutePath()
-			.normalize()
-			.resolve("output/checkpoint.json");
+	private static final Path CHECKPOINT_PATH = AuditPaths.CHECKPOINT_PATH;
 
-	private static final Path OUTPUT_PATH = Paths.get("")
-			.toAbsolutePath()
-			.normalize()
-			.resolve("output/output.csv");
+	private static final Path OUTPUT_PATH = AuditPaths.OUTPUT_PATH;
 
 	private static final Path FAILED_BATCH_PATH = Paths
 			.get("")
@@ -107,7 +101,7 @@ public final class TweetAuditApp {
 	 */
 	private static AppConfig load() throws IOException {
 		String apiKey = ApiKeyLoader.load();
-		Path criteria = new CriteriaLoader(OBJECT_MAPPER).load();
+		Path criteria = CriteriaLoader.load();
 		TweetAuditApp app = new TweetAuditApp();
 		return app.new AppConfig(apiKey, criteria);
 	}

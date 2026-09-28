@@ -17,7 +17,7 @@ The first project in [Ben X's backend engineering path](https://github.com/benx4
 Before you go into reading how to use this tool, I want to clarify some things:
 
 - Defining number of `likes`, `comments`, or `reposts` does not affect the evaulation results, as tweets are judged based on the topic/content of the tweet rather than the engagement data.
-- This tool does not automate the deletion process. You still have to manually go through your tweets to decide what will be kept and what will be deleted. You can always use an automation tool if you have one.
+- This tool does not automate the deletion process. You still have to manually go through your tweets to decide what will be kept and what will be deleted. You can always use an automation tool if you have one, or if you have a twitter api key.
 - This tool recommends both tweets to keep, and delete. The file would have a long list of tweets, so to help you filter to just those to delete/keep, I have written the steps out for you [here](#filtering-results).
 
 Info on how to use the tool has been written below:
@@ -116,7 +116,6 @@ Here are the steps to filter the results of the csv in `Microsoft Excel`.
 
 These are other features I plan to implement:
 
-- Add appropriate tests for the project
 - Add a simple loading animation to improve visual appeal
 - Add model configuration options
 - Add options to allow or remove retweets

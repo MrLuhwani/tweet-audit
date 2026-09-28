@@ -1,0 +1,66 @@
+package dev.luhwani.criteria;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.luhwani.error.FatalException;
+import dev.luhwani.model.Criteria;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+public final class CriteriaValidator {
+
+    private final ObjectMapper objectMapper;
+
+    public CriteriaValidator() {
+        this(new ObjectMapper());
+    }
+
+    public CriteriaValidator(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
+
+    public Criteria validate(Path criteriaPath) throws FatalException {
+        if (criteriaPath == null) {
+            throw new FatalException("Criteria path cannot be null");
+        }
+
+        try {
+            if (!Files.isRegularFile(criteriaPath)) {
+                throw new FatalException("Criteria file does not exist: " + criteriaPath);
+            }
+
+            String contents = Files.readString(criteriaPath);
+            if (contents.isBlank()) {
+                throw new FatalException("Criteria file is empty: " + criteriaPath);
+            }
+
+            JsonNode json = objectMapper.readTree(contents);
+            if (json == null || containsEmptyContainer(json)) {
+                throw new FatalException("Criteria file is empty: " + criteriaPath);
+            }
+
+            return objectMapper.treeToValue(json, Criteria.class);
+        } catch (JsonProcessingException e) {
+            throw new FatalException("Criteria file contains invalid JSON: " + criteriaPath, e);
+        } catch (IOException e) {
+            throw new FatalException("Unable to read criteria file: " + criteriaPath, e);
+        }
+    }
+
+    private boolean containsEmptyContainer(JsonNode node) {
+        if (node.isObject() || node.isArray()) {
+            if (node.isEmpty()) {
+                return true;
+            }
+            for (JsonNode child : node) {
+                if (containsEmptyContainer(child)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+}
