@@ -19,6 +19,7 @@ import dev.luhwani.error.RetryableException;
 import dev.luhwani.model.AnalysisResult;
 import dev.luhwani.model.TweetBatch;
 
+/** Evaluates queued tweet batches concurrently and publishes successful results. */
 public final class RequestExecutor implements AutoCloseable {
 
     private static final Logger LOGGER = Logger.getLogger(RequestExecutor.class.getName());
@@ -40,6 +41,16 @@ public final class RequestExecutor implements AutoCloseable {
     private volatile Exception lastBatchException;
     private volatile int consecutiveBatchExceptions;
 
+    /**
+     * Creates an executor for the supplied batch and result queues.
+     *
+     * @param workerThreads number of request workers to create
+     * @param tweetBatches queue of batches to evaluate
+     * @param resultQueue receiving successful analysis results
+     * @param countDown latch decremented when each batch finishes
+     * @param provider used to evaluate batches
+     * @throws IllegalArgumentException if the queue size does not match the latch
+     */
     public RequestExecutor(int workerThreads, BlockingQueue<TweetBatch> tweetBatches,
             BlockingQueue<AnalysisResult> resultQueue, CountDownLatch countDown,
             AiProvider provider) {
@@ -54,6 +65,7 @@ public final class RequestExecutor implements AutoCloseable {
         this.resultQueue = resultQueue;
     }
 
+    /** Starts workers that drain the batch queue. */
     public void start() {
         synchronized (batchExceptionLock) {
             lastBatchException = null;
@@ -120,6 +132,11 @@ public final class RequestExecutor implements AutoCloseable {
                 && Objects.equals(previous.getMessage(), current.getMessage());
     }
 
+    /**
+     * Waits for all started workers to finish.
+     *
+     * @throws FatalException if a worker fails or the waiting thread is interrupted
+     */
     public void awaitCompletion() throws FatalException {
         for (Future<?> task : tasks) {
             try {

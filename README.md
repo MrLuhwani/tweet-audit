@@ -9,7 +9,6 @@ The first project in [Ben X's backend engineering path](https://github.com/benx4
 - [Installations](#installations)
 - [Configuration](#configuration)
 - [Usage Instructions](#usage-instructions)
-- [Sorting Results by Batch](#sorting-results-by-batch)
 - [Roadmap](#roadmap)
 
 ## Things Worth Noting
@@ -24,7 +23,7 @@ Info on how to use the tool has been written below:
 
 ## Prerequisites
 These are the things you need to run this software application:
-- [Java 11](https://www.oracle.com/java/technologies/javase-jdk11-downloads.html)
+- [Java 21](https://www.oracle.com/java/technologies/javase-jdk21-downloads.html)
 - [Maven 3.9+](https://maven.apache.org/download.cgi)
 - Download your X archive from Settings → Your Account → Download an archive of your data (takes 24-48 hours)
 - Get a Gemini Api Key from [Google Ai Studio](https://aistudio.google.com/app/apikey)
@@ -59,48 +58,18 @@ After the first time you run the tool, on subsequent runs, you may skip the `com
 
 ### Other Implementation Notes
 
-- Tweets are processed in batches of 15 tweets. The batch size is not configurable yet.
+- Tweets are processed in batches of 60 tweets. The batch size is not configurable yet.
 - The tool uses `gemini-3.5-flash-lite` internally. The model choice is not configurable for now.
 - Analysis results are created in `output\output.csv`.
 - If the tool closes for any reason, the CLI creates a `checkpoint.json` in the `output` folder.
-- The `checkpoint` represents where the tool has reached in the processing, both for failed, and for successful tweet batches.
+- The `checkpoint` represents which batch of tweets were successfully processed.
 
 ```json
-{"successfulBatches":[1,2,3,4,5,6,10,11,12,13,14,15,16],"failedBatches":[7,8,9],"lastProcessedBatch":16,"lastProcessedTweet":"20686821481932295099","empty":false}
+{"successfulBatches":[1,2,3,4,5,6,10,11,12,13,14,15,16]}
 ```
 
-- When the tool is reloaded, it checks the checkpoint file, and continues from where it stopped
-- If for any reason, a batch fails, a `failedBatches.jsonl` is created in the output folder to identify batches that where not processed
-
-```json
-{"batchNumber":12,"tweets":[{"id":"1874645171535257831","text":"RT @_Tech…"},{"id":"2074644957747450308","text":"RT @bISHAMON Wow!…"}]}
-{"batchNumber":26,"tweets":[{"id":"1874645171535234831","text":"We really…"},{"id":"2074644957747450308","text":"Emphasis…"}]}
-{"batchNumber":37,"tweets":[{"id":"1874645171535234831","text":"Sentiment is not…"},{"id":"2074644957747450308","text":"Smirking…"}]}
-```
-
-- On the next app run, the tool firstly retries the failed batches, before continuing with other unprocessed batches
-
-### Sorting Results by Batch
-
-During a normal run, results are written in batch order. When a run retries failed batches, those retry results are appended as they finish, so `output/output.csv` may not be sorted by `batch_number`.
-
-To sort the file in Microsoft Excel:
-
-1. Open `output/output.csv` in Excel.
-2. Select the full table, including the header row.
-3. On the `Data` tab, choose `Sort`.
-4. Select `batch_number` as the sort column and choose `Smallest to Largest`.
-
-Keep the header row enabled when prompted so that `batch_number` is treated as a column name. If you use another spreadsheet program, sort the complete CSV table by the numeric `batch_number` column rather than sorting only one column.
-
-An example of how the output folder looks like
-```csv
-batch_number,tweet_link,decision,reason
-1,https://x.com/i/status/1111111111111111111,KEEP,"Polite and casual conversation, complies with all criteria."
-1,https://x.com/i/status/1223456765434565643,KEEP,Normal bug report / product feedback tweet.
-2,https://x.com/i/status/1236464576879898865,DELETE,"Mentions Web3, which is included in topics_to_exclude."
-3,https://x.com/i/status/2838488457757477382,KEEP,Harmless personal thought.
-```
+- When the tool is reloaded, it checks the checkpoint file, and filters out successful batches
+- If you wish to go into the source code and edit batch size after first run, to prevent inconsistencies with the checkpoint file, you would have to delete the output folder also.
 
 ## Filtering Results
 
@@ -116,10 +85,9 @@ Here are the steps to filter the results of the csv in `Microsoft Excel`.
 
 These are other features I plan to implement:
 
-- Add a simple loading animation to improve visual appeal
+- Add docker support
 - Add model configuration options
 - Add options to allow or remove retweets
-- Add a way to type out a criteria and determine the specifications based on the typed out text
-- Upgrade the code from Java 11 to 21
-- Add docker support
+- Add batch size configuration options
+- Add a way to type out a criteria and determine the specifications based on the typed out text using an AI model.
 - Add CI/CD

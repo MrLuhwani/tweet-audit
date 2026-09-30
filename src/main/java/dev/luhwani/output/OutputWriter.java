@@ -17,6 +17,7 @@ import dev.luhwani.error.FatalException;
 import dev.luhwani.model.AnalysisResult;
 import dev.luhwani.model.Checkpoint;
 
+/** Consumes analysis results and persists CSV rows and checkpoint progress. */
 public final class OutputWriter implements AutoCloseable {
 
     private static final Path CSV_PATH = AuditPaths.CSV_PATH;
@@ -32,6 +33,15 @@ public final class OutputWriter implements AutoCloseable {
 
     private Future<?> task;
 
+    /**
+     * Creates a writer for the configured CSV and checkpoint paths.
+     *
+     * @param objectMapper mapper used to serialize checkpoint data
+     * @param resultQueue queue of completed analysis results
+     * @param countDown latch used to detect when all batches have finished
+     * @param checkpoint current checkpoint to update
+     * @throws IOException if an output file cannot be opened
+     */
     public OutputWriter(ObjectMapper objectMapper, BlockingQueue<AnalysisResult> resultQueue, CountDownLatch countDown,
             Checkpoint checkpoint)
             throws IOException {
@@ -47,6 +57,7 @@ public final class OutputWriter implements AutoCloseable {
         this.checkpoint = checkpoint;
     }
 
+    /** Starts the background writer. */
     public void start() {
         task = executor.submit(() -> {
             try {
@@ -60,6 +71,11 @@ public final class OutputWriter implements AutoCloseable {
         });
     }
 
+    /**
+     * Waits for the background writer to finish.
+     *
+     * @throws FatalException if writing fails
+     */
     public void awaitCompletion() throws FatalException {
         try {
             task.get();

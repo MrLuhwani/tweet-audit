@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+/** Validates that a criteria path contains non-empty, readable JSON. */
 public final class CriteriaValidator {
 
     private final ObjectMapper objectMapper;
@@ -18,10 +19,22 @@ public final class CriteriaValidator {
         this(new ObjectMapper());
     }
 
+    /**
+     * Creates a validator using the supplied JSON mapper.
+     *
+     * @param objectMapper mapper used to parse criteria JSON
+     */
     public CriteriaValidator(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * Reads and validates a criteria file.
+     *
+     * @param criteriaPath file containing the evaluation rules
+     * @return parsed criteria rules
+     * @throws FatalException if the file is missing, empty, unreadable, or invalid
+     */
     public Criteria validate(Path criteriaPath) throws FatalException {
         if (criteriaPath == null) {
             throw new IllegalArgumentException("Criteria path cannot be null");

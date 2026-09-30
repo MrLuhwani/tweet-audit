@@ -12,6 +12,13 @@ import dev.luhwani.model.TweetBatch;
  */
 public final class TweetFilter {
 
+    /**
+     * Removes batches recorded as successfully processed in a checkpoint.
+     *
+     * @param tweetBatches batches available for processing
+     * @param checkpoint persisted processing progress
+     * @return an immutable list containing only unfinished batches
+     */
     public static List<TweetBatch> filter(List<TweetBatch> tweetBatches, Checkpoint checkpoint) {
         return tweetBatches.stream()
                 .filter(batch -> !checkpoint.successfulBatches().contains(batch.batchNumber()))

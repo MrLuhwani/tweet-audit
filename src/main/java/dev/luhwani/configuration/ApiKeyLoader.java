@@ -8,6 +8,12 @@ public final class ApiKeyLoader {
     private ApiKeyLoader() {
     }
 
+    /**
+     * Loads the Gemini API key from the process environment.
+     *
+     * @return the non-blank value of {@code GEMINI_API_KEY}
+     * @throws FatalException if the environment variable is absent or blank
+     */
     public static String load() throws FatalException {
         String apiKey = System.getenv("GEMINI_API_KEY");
 

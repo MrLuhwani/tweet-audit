@@ -11,6 +11,12 @@ public final class CriteriaLoader {
 	private static final Path DEFAULT_CRITERIA_PATH = AuditPaths.DEFAULT_CRITERIA_PATH;
 	private static final Path CRITERIA_PATH = AuditPaths.CRITERIA_PATH;
 
+	/**
+	 * Locates the user criteria file, falling back to the example file.
+	 *
+	 * @return the path to the criteria file that should be loaded
+	 * @throws IllegalStateException if neither file exists
+	 */
 	public static Path load() {
 		return load(CRITERIA_PATH, DEFAULT_CRITERIA_PATH);
 	}

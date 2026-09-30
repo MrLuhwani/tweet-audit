@@ -12,6 +12,7 @@ import dev.luhwani.configuration.AuditPaths;
 import dev.luhwani.error.FatalException;
 import dev.luhwani.model.Checkpoint;
 
+/** Creates and reads the checkpoint and CSV files used to resume an audit. */
 public final class CheckpointResolver {
 
     // changes to the header here should also be applied to the
@@ -23,6 +24,11 @@ public final class CheckpointResolver {
 
     private final ObjectMapper objectMapper;
 
+    /**
+     * Creates a resolver using the supplied JSON mapper.
+     *
+     * @param objectMapper mapper used to read and write checkpoints
+     */
     public CheckpointResolver(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
@@ -31,6 +37,14 @@ public final class CheckpointResolver {
         this(new ObjectMapper());
     }
 
+    /**
+     * Resolves the configured output files, creating an empty pair when neither
+     * file exists.
+     *
+     * @return the current checkpoint
+     * @throws FatalException if the files cannot be created or read
+     * @throws IllegalStateException if only one of the two files exists
+     */
     public Checkpoint load() throws FatalException {
         return load(CHECKPOINT_PATH, CSV_PATH);
     }
@@ -76,6 +90,12 @@ public final class CheckpointResolver {
 
     }
 
+    /**
+     * Reads the configured checkpoint without creating or validating the CSV.
+     *
+     * @return the stored checkpoint
+     * @throws IOException if the checkpoint cannot be read or deserialized
+     */
     public Checkpoint fromFile() throws IOException {
         return fromFile(CHECKPOINT_PATH);
     }

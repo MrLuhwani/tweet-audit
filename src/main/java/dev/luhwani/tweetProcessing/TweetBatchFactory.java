@@ -34,6 +34,13 @@ public final class TweetBatchFactory {
         return List.copyOf(batches);
     }
 
+    /**
+     * Creates sequential batches using the application's default batch size.
+     *
+     * @param tweets tweets to divide into batches
+     * @return immutable, sequentially numbered batches
+     * @throws IllegalArgumentException if {@code tweets} is null or empty
+     */
     public static List<TweetBatch> createBatches(List<TweetData> tweets) {
         return createBatches(tweets, BATCH_SIZE);
     }

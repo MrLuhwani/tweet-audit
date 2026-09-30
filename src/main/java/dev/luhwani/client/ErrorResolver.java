@@ -13,7 +13,7 @@ public final class ErrorResolver {
 
     private static final Set<String> RETRYABLE_KEYWORDS = Set.of("timeout", "connection", "rate limit",
             "too many requests", "quota", "503",
-            "429", "temporarily unavailable", "server errror");
+            "429", "temporarily unavailable", "server error");
 
     public static void throwFromMessage(Exception e) throws RetryableException, BatchException {
         String errorMsg = e.getMessage();

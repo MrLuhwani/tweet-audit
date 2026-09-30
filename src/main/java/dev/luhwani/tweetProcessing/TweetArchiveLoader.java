@@ -25,6 +25,11 @@ public final class TweetArchiveLoader {
     private final ObjectMapper objectMapper;
     private final Path archivePath;
 
+    /**
+     * Creates a loader for the configured tweet archive path.
+     *
+     * @param objectMapper mapper used to parse the archive JSON
+     */
     public TweetArchiveLoader(ObjectMapper objectMapper) {
         this(objectMapper, TWEET_ARCHIVE_PATH);
     }
@@ -41,6 +46,14 @@ public final class TweetArchiveLoader {
         this.archivePath = archivePath;
     }
 
+    /**
+     * Loads tweets from the archive, skipping entries without an id or text.
+     * The archive may contain the standard {@code window.YTD.tweets.part0 = }
+     * JavaScript prefix before its JSON array.
+     *
+     * @return the valid tweets in archive order
+     * @throws FatalException if the archive is missing, malformed, or unreadable
+     */
     public List<TweetData> load() throws FatalException {
         if (!Files.exists(archivePath)) {
             throw new FatalException("Tweet archive not found at path: " + archivePath);

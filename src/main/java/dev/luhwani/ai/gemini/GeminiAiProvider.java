@@ -35,6 +35,14 @@ public class GeminiAiProvider extends AiProvider {
     private final GenerateContentConfig requestConfig;
     private final ContentGenerator contentGenerator;
 
+    /**
+     * Creates a Gemini-backed evaluation provider.
+     *
+     * @param apiKey Gemini API key
+     * @param criteria rules sent with each evaluation request
+     * @param mapper mapper used to serialize prompts and parse responses
+     * @throws IOException if the criteria cannot be prepared for requests
+     */
     public GeminiAiProvider(String apiKey, Criteria criteria, ObjectMapper mapper) throws IOException {
         super(apiKey, criteria, mapper);
         OkHttpClient customHttpClient = new OkHttpClient.Builder()
@@ -58,6 +66,15 @@ public class GeminiAiProvider extends AiProvider {
                 this.contentGenerator = contentGenerator;
     }
 
+    /**
+     * Sends a batch to Gemini and parses its structured classification response.
+     *
+     * @param batch batch to classify
+     * @return Gemini's decisions for the batch
+     * @throws RetryableException for transient API or network failures
+     * @throws BatchException for an unusable batch response
+     * @throws FatalException for permanent API or response-format failures
+     */
     @Override
     public AnalysisResult analyze(TweetBatch batch) throws RetryableException, BatchException, FatalException {
         try {

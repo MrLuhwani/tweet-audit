@@ -47,7 +47,7 @@ public final class TweetAuditApp {
 	private static final Logger LOGGER = Logger.getLogger(TweetAuditApp.class.getName());
 
 	/**
-	 * Starts the tweet audit workflow, including retries for failed batches.
+	 * Starts the tweet audit workflow.
 	 * In charge of orchestrating other classes and internal methods used
 	 * for the audit process.
 	 * <p>
@@ -80,8 +80,8 @@ public final class TweetAuditApp {
 	}
 
 	/**
-	 * Loads tweets from the archive and creates the next batches.
-	 *
+	 * Loads tweets from the archive and creates the next set of
+	 * unprocessed batches
 	 * @return a list of tweet batches
 	 * @throws FatalException
 	 */
@@ -95,7 +95,7 @@ public final class TweetAuditApp {
 	}
 
 	/**
-	 * Runs the provider, result writer, and failed-batch writer for one pass.
+	 * Runs the provider and result writer.
 	 *
 	 * @param tweetBatches
 	 * @param config
@@ -104,7 +104,6 @@ public final class TweetAuditApp {
 	 * @see AiProvider
 	 * @see RequestExecutor
 	 * @see OutputWriter
-	 * @see BatchFailureHandler
 	 * @throws Exception if any fatal error happens internally during evaluation
 	 */
 	private static void evaluateTweets(List<TweetBatch> tweetBatches, AppConfig config)

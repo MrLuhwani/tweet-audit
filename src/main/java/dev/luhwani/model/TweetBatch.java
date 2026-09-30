@@ -4,6 +4,13 @@ import java.util.List;
 
 /** An immutable, numbered group of tweets sent to the evaluation provider. */
 public record TweetBatch(int batchNumber, List<TweetData> tweets) {
+    /**
+     * Creates an immutable batch.
+     *
+     * @param batchNumber sequential batch number
+     * @param tweets non-empty tweets in this batch
+     * @throws IllegalArgumentException if the number is negative or tweets are empty
+     */
     public TweetBatch(int batchNumber, List<TweetData> tweets) {
         if (batchNumber < 0) {
             throw new IllegalArgumentException("Batch index cannot be negative");
