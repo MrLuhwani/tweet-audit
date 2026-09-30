@@ -1,19 +1,20 @@
-package dev.luhwani.tweetEvaluation;
+package dev.luhwani.client;
 
 import java.util.concurrent.ThreadLocalRandom;
 
-import dev.luhwani.tweetEvaluation.exception.RetryableException;
+import dev.luhwani.error.BatchException;
+import dev.luhwani.error.RetryableException;
 
 /** Applies bounded exponential backoff with jitter between retry attempts. */
-public class RetryPolicy {
+final class RetryPolicy {
 
     private static final long BASE_DELAY = 300;
     private static final long MAX_DELAY = 3000;
     private static final long JITTER_MAX = 500;
 
-    static void awaitRetry(RetryableException e, int attempt, int maxAttempt) throws InterruptedException, RetryableException {
+    static void awaitRetry(RetryableException e, int attempt, int maxAttempt) throws InterruptedException, BatchException {
         if (attempt >= maxAttempt) {
-            throw e;
+            throw new BatchException(e);
         }
         long delay = exponentialBackoff(attempt);
         System.err.printf("Retrying after %d ms (attempt %d)%n", delay, attempt + 1);

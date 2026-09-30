@@ -32,21 +32,6 @@ public final class Main {
 
     public static void main(String[] args) {
         TweetAuditApp.run();
-        /*
-         * After the application finishes running, some google worker
-         * threads are still awake in the JVM. They have no negative
-         * effect on the application
-         * but if you call system.exit() without this initial sleep
-         * sometimes the jvm closes before the OutputWriter
-         * can write the very last batch to the output file
-         * 
-         */
-        try {
-            Thread.sleep(2000);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            e.printStackTrace();
-        }
         System.exit(0);
     }
 

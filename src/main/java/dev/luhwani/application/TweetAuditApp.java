@@ -1,14 +1,10 @@
 package dev.luhwani.application;
 
-import java.io.IOException;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.logging.Logger;
 
@@ -16,21 +12,19 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.luhwani.configuration.ApiKeyLoader;
-import dev.luhwani.configuration.AuditPaths;
 import dev.luhwani.criteria.CriteriaLoader;
+import dev.luhwani.criteria.CriteriaValidator;
+import dev.luhwani.error.FatalException;
 import dev.luhwani.model.AnalysisResult;
 import dev.luhwani.model.Checkpoint;
-import dev.luhwani.model.QueueEvent;
+import dev.luhwani.model.Criteria;
 import dev.luhwani.model.TweetBatch;
 import dev.luhwani.model.TweetData;
 import dev.luhwani.output.OutputWriter;
-import dev.luhwani.tweetEvaluation.AiProvider;
-import dev.luhwani.tweetEvaluation.BatchFailureHandler;
-import dev.luhwani.tweetEvaluation.RequestExecutor;
-import dev.luhwani.tweetEvaluation.RequestExecutor.EvaluationSummary;
-import dev.luhwani.tweetEvaluation.gemini.GeminiAiProvider;
+import dev.luhwani.ai.AiProvider;
+import dev.luhwani.ai.gemini.GeminiAiProvider;
+import dev.luhwani.client.RequestExecutor;
 import dev.luhwani.tweetProcessing.CheckpointResolver;
-import dev.luhwani.tweetProcessing.FailedBatchLoader;
 import dev.luhwani.tweetProcessing.TweetArchiveLoader;
 import dev.luhwani.tweetProcessing.TweetBatchFactory;
 import dev.luhwani.tweetProcessing.TweetFilter;
@@ -45,29 +39,12 @@ public final class TweetAuditApp {
 	}
 
 	/** Holds the configuration shared by the evaluation components. */
-	private final class AppConfig {
-		private final String apiKey;
-		private final Path criteria;
-
-		AppConfig(String apiKey, Path criteria) {
-			this.apiKey = apiKey;
-			this.criteria = criteria;
-		}
+	private record AppConfig(String apiKey, Criteria criteria) {
 	}
 
 	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
 			.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 	private static final Logger LOGGER = Logger.getLogger(TweetAuditApp.class.getName());
-
-	private static final Path CHECKPOINT_PATH = AuditPaths.CHECKPOINT_PATH;
-
-	private static final Path OUTPUT_PATH = AuditPaths.OUTPUT_PATH;
-
-	private static final Path FAILED_BATCH_PATH = Paths
-			.get("")
-			.toAbsolutePath()
-			.normalize()
-			.resolve("output/failedBatches.jsonl");
 
 	/**
 	 * Starts the tweet audit workflow, including retries for failed batches.
@@ -79,21 +56,13 @@ public final class TweetAuditApp {
 	public static void run() {
 		try {
 			System.out.println("----------Tweet Audit App----------");
+			LOGGER.info("Started tweet audit application");
 			AppConfig config = load();
-			List<TweetBatch> tweetBatches = loadFailedBatches();
-			if (!tweetBatches.isEmpty()) {
-				LOGGER.info("Retrying " + tweetBatches.size() + " failed batches from previous run.");
-				evaluateTweets(tweetBatches, config, true);
-			}
-			tweetBatches = processTweets();
-			evaluateTweets(tweetBatches, config, false);
-		} catch (IOException | InterruptedException | IllegalStateException | ExecutionException e) {
-			LOGGER.severe("Error message: " + e.getMessage());
-			e.printStackTrace();
+			List<TweetBatch> tweetBatches = processTweets();
+			evaluateTweets(tweetBatches, config);
+			LOGGER.info("Tweet audit application completed successfully");
 		} catch (Exception e) {
-			LOGGER.severe("Error name: " + e.getClass().getName());
-			LOGGER.severe("Error message: " + e.getMessage());
-			e.printStackTrace();
+			LOGGER.severe(e.getMessage());
 		}
 	}
 
@@ -101,57 +70,27 @@ public final class TweetAuditApp {
 	 * Loads the API key and criteria file used by the evaluation provider.
 	 *
 	 * @return the loaded application configuration
-	 * @throws IOException
+	 * @throws FatalException
 	 */
-	private static AppConfig load() throws IOException {
+	private static AppConfig load() throws FatalException {
 		String apiKey = ApiKeyLoader.load();
-		Path criteria = CriteriaLoader.load();
-		TweetAuditApp app = new TweetAuditApp();
-		return app.new AppConfig(apiKey, criteria);
+		Path criteriaPath = CriteriaLoader.load();
+		Criteria criteria = new CriteriaValidator(OBJECT_MAPPER).validate(criteriaPath);
+		return new AppConfig(apiKey, criteria);
 	}
 
 	/**
-	 * Loads failed batches and verifies that they agree with the checkpoint.
+	 * Loads tweets from the archive and creates the next batches.
 	 *
-	 * @return tweetbatches, whether it is empty or not
-	 * @throws IOException           if an error occured from inside the
-	 *                               {@link FailedBatchLoader}
-	 * @throws IllegalStateException if the failed batches in the checkpoint
-	 *                               and the failed batches in failedbatches.jsonl
-	 *                               do not match
+	 * @return a list of tweet batches
+	 * @throws FatalException
 	 */
-	private static List<TweetBatch> loadFailedBatches() throws IOException {
-		Map<Integer, TweetBatch> failedBatches = new FailedBatchLoader(OBJECT_MAPPER, FAILED_BATCH_PATH).load();
-		Checkpoint checkpoint = new CheckpointResolver(OBJECT_MAPPER).load();
-		for (Integer batchNumber : checkpoint.getFailedBatches()) {
-			if (!failedBatches.containsKey(batchNumber)) {
-				throw new IllegalStateException("Checkpoint references missing failed batch: " + batchNumber);
-			}
-		}
-		for (Integer batchNumber : failedBatches.keySet()) {
-			if (!checkpoint.getFailedBatches().contains(batchNumber)) {
-				throw new IllegalStateException(
-						"Failed batch file contains batch not present in checkpoint: " + batchNumber);
-			}
-		}
-		return List.copyOf(failedBatches.values());
-	}
-
-	/**
-	 * Loads unprocessed tweets from the archive and creates the next batches.
-	 *
-	 * @return a list of tweet batches, whether it is empty or not
-	 * @throws IOException
-	 * @throws InterruptedException
-	 */
-	private static List<TweetBatch> processTweets() throws IOException, InterruptedException {
+	private static List<TweetBatch> processTweets() throws FatalException {
 		List<TweetData> tweets = new TweetArchiveLoader(OBJECT_MAPPER).load();
+		LOGGER.info("Parsed " + tweets.size() + " tweets\n");
 		List<TweetBatch> tweetBatches = TweetBatchFactory.createBatches(tweets);
 		Checkpoint checkpoint = new CheckpointResolver(OBJECT_MAPPER).load();
 		tweetBatches = TweetFilter.filter(tweetBatches, checkpoint);
-		LOGGER.info(
-				"Parsed " + tweets.size() + " tweets\n" +
-						"Resuming from batch " + tweetBatches.getFirst().batchNumber());
 		return tweetBatches;
 	}
 
@@ -168,43 +107,35 @@ public final class TweetAuditApp {
 	 * @see BatchFailureHandler
 	 * @throws Exception if any fatal error happens internally during evaluation
 	 */
-	private static void evaluateTweets(List<TweetBatch> tweetBatches, AppConfig config, boolean isRetrying)
+	private static void evaluateTweets(List<TweetBatch> tweetBatches, AppConfig config)
+			throws Exception {
+		AiProvider provider = new GeminiAiProvider(config.apiKey, config.criteria, OBJECT_MAPPER);
+		Checkpoint checkpoint = new CheckpointResolver(OBJECT_MAPPER).fromFile();
+		evaluateTweets(tweetBatches, provider, checkpoint);
+	}
+
+	static void evaluateTweets(List<TweetBatch> tweetBatches, AiProvider provider, Checkpoint checkpoint)
 			throws Exception {
 		if (tweetBatches.isEmpty()) {
-			System.out.println("Tweet Processing had been completed previously");
+			LOGGER.info("Tweet Processing completed on previous run");
 			return;
 		}
-		BlockingQueue<QueueEvent<TweetBatch>> batchQueue = new ArrayBlockingQueue<>(tweetBatches.size());
+		BlockingQueue<TweetBatch> batchQueue = new ArrayBlockingQueue<>(tweetBatches.size());
 		for (TweetBatch batch : tweetBatches) {
-			batchQueue.put(new QueueEvent.Item<>(batch));
+			batchQueue.put(batch);
 		}
-		BlockingQueue<QueueEvent<AnalysisResult>> resultQueue = new LinkedBlockingQueue<>();
-		BlockingQueue<QueueEvent<TweetBatch>> failureQueue = new LinkedBlockingQueue<>();
+		BlockingQueue<AnalysisResult> resultQueue = new LinkedBlockingQueue<>();
 
-		Map<Integer, String> failedBatchToLastTweetMap = new ConcurrentHashMap<>();
-		BlockingQueue<QueueEvent<Integer>> successfulRetriedBatches = new LinkedBlockingQueue<>();
-
+		CountDownLatch countDown = new CountDownLatch(batchQueue.size());
 		int workers = 3;
-		AiProvider provider = new GeminiAiProvider(config.apiKey, config.criteria, OBJECT_MAPPER);
-
 		try (
-				RequestExecutor requestExecutor = new RequestExecutor(batchQueue, resultQueue, failureQueue,
-						failedBatchToLastTweetMap, workers, provider);
-				OutputWriter outputWriter = new OutputWriter(resultQueue, failedBatchToLastTweetMap,
-						CHECKPOINT_PATH, OBJECT_MAPPER, OUTPUT_PATH, FAILED_BATCH_PATH,
-						tweetBatches.getFirst().batchNumber(),
-						successfulRetriedBatches);
-				BatchFailureHandler batchFailureHandler = new BatchFailureHandler(failureQueue,
-						FAILED_BATCH_PATH, OBJECT_MAPPER, successfulRetriedBatches)) {
-
-			requestExecutor.start(isRetrying);
-			outputWriter.start(isRetrying);
-			batchFailureHandler.start(isRetrying);
-			EvaluationSummary summary = requestExecutor.awaitCompletion();
+				RequestExecutor requestExecutor = new RequestExecutor(workers, batchQueue, resultQueue, countDown,
+						provider);
+				OutputWriter outputWriter = new OutputWriter(OBJECT_MAPPER, resultQueue, countDown, checkpoint)) {
+			requestExecutor.start();
+			outputWriter.start();
+			requestExecutor.awaitCompletion();
 			outputWriter.awaitCompletion();
-			batchFailureHandler.awaitCompletion();
-			int failed = tweetBatches.size() - summary.getSucceeded();
-			LOGGER.info("Completed batches: " + summary.getSucceeded() + "\nFailed batches: " + failed);
 		}
 
 	}

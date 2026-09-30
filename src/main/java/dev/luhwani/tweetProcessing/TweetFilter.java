@@ -14,7 +14,7 @@ public final class TweetFilter {
 
     public static List<TweetBatch> filter(List<TweetBatch> tweetBatches, Checkpoint checkpoint) {
         return tweetBatches.stream()
-                .filter(batch -> !checkpoint.getSuccessfulBatches().contains(batch.batchNumber()))
+                .filter(batch -> !checkpoint.successfulBatches().contains(batch.batchNumber()))
                 .toList();
     }
 

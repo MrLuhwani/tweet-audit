@@ -1,18 +1,18 @@
 package dev.luhwani.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+
+import dev.luhwani.ai.AiProvider;
 
 /** An {@link AiProvider}s decision and explanation for one tweet. */
-public final class TweetDecision {
-    
-    private final String tweetId;
-    private final Decision decision;
-    private final String reason;
+@JsonPropertyOrder({ "tweet_id", "decision", "reason" })
+public record TweetDecision(
+        @JsonProperty("tweet_id") String tweetId,
+        Decision decision,
+        String reason) {
 
-    public TweetDecision(
-        @JsonProperty("tweet_id")String tweetId,
-        @JsonProperty("decision")Decision decision,
-        @JsonProperty("reason")String reason) {
+    public TweetDecision(String tweetId, Decision decision, String reason) {
         if (tweetId == null || tweetId.isEmpty()) {
             throw new IllegalArgumentException("tweetId cannot be null or empty");
         }
@@ -22,21 +22,8 @@ public final class TweetDecision {
         if (reason == null) {
             throw new IllegalArgumentException("reason cannot be null or empty");
         }
-        this.tweetId = tweetId;
+        this.tweetId = "https://x.com/i/status/" + tweetId;
         this.decision = decision;
         this.reason = reason;
     }
-
-    public String tweetId() {
-        return tweetId;
-    }
-
-    public Decision decision() {
-        return decision;
-    }
-
-    public String reason() {
-        return reason;
-    }
-
 }

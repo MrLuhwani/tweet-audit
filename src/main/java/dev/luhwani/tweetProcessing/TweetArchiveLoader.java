@@ -41,7 +41,7 @@ public final class TweetArchiveLoader {
         this.archivePath = archivePath;
     }
 
-    public List<TweetData> load() {
+    public List<TweetData> load() throws FatalException {
         if (!Files.exists(archivePath)) {
             throw new FatalException("Tweet archive not found at path: " + archivePath);
         }
@@ -78,7 +78,7 @@ public final class TweetArchiveLoader {
             List<TweetData> tweets = new ArrayList<>();
             while ((token = parser.nextToken()) != JsonToken.END_ARRAY) {
                 if (token == null) {
-                    throw new IOException("Unexpected end of tweet archive");
+                    throw new FatalException("Unexpected end of tweet archive");
                 }
                 JsonNode wrapper = objectMapper.readTree(parser);
                 if (wrapper == null || !wrapper.isObject()) {
@@ -113,10 +113,8 @@ public final class TweetArchiveLoader {
                 tweetCount++;
             }
             return tweets;
-        } catch ( IOException e) {
-            throw new FatalException(
-                    "Failed to read tweet archive: " + archivePath,
-                    e);
+        } catch (IOException e) {
+            throw new FatalException("IOException occured. Failed to read tweet archive: " + archivePath, e);
         }
 
     }

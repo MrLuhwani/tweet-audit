@@ -4,7 +4,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import dev.luhwani.configuration.AuditPaths;
-import dev.luhwani.error.FatalException;
 
 /** Locates and validates the criteria file used to audit tweets. */
 public final class CriteriaLoader {
@@ -28,7 +27,8 @@ public final class CriteriaLoader {
 			return defaultCriteriaPath;
 		}
 
-		throw new FatalException("Could not find criteria file at " + criteriaPath + " or fallback at "
-				+ defaultCriteriaPath);
+		throw new IllegalStateException(
+				"Could not find criteria file at " + criteriaPath +
+						" or fallback at " + defaultCriteriaPath);
 	}
 }

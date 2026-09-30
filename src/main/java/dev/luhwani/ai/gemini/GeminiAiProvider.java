@@ -1,7 +1,6 @@
-package dev.luhwani.tweetEvaluation.gemini;
+package dev.luhwani.ai.gemini;
 
 import java.io.IOException;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Optional;
 
@@ -15,27 +14,28 @@ import com.google.genai.errors.ApiException;
 import com.google.genai.errors.GenAiIOException;
 import com.google.genai.types.ClientOptions;
 import com.google.genai.types.GenerateContentConfig;
-import com.google.genai.types.GenerateContentResponse;
 
+import dev.luhwani.ai.AiProvider;
+import dev.luhwani.client.ErrorResolver;
+import dev.luhwani.error.*;
 import dev.luhwani.model.AnalysisResult;
+import dev.luhwani.model.Criteria;
 import dev.luhwani.model.TweetBatch;
 import dev.luhwani.model.TweetData;
-import dev.luhwani.tweetEvaluation.AiProvider;
-import dev.luhwani.tweetEvaluation.exception.AiProviderException;
-import dev.luhwani.tweetEvaluation.exception.BatchException;
-import dev.luhwani.tweetEvaluation.exception.FatalException;
-import dev.luhwani.tweetEvaluation.exception.RetryableException;
 import okhttp3.OkHttpClient;
 
-/** Uses Google's Gemini API to classify tweets against the configured criteria. */
+/**
+ * Uses Google's Gemini API to classify tweets against the configured criteria.
+ */
 public class GeminiAiProvider extends AiProvider {
 
     // TODO: make model choice more confifgurable
     private final String MODEL = "gemini-3.5-flash-lite";
     private final Client client;
     private final GenerateContentConfig requestConfig;
+    private final ContentGenerator contentGenerator;
 
-    public GeminiAiProvider(String apiKey, Path criteria, ObjectMapper mapper) throws IOException {
+    public GeminiAiProvider(String apiKey, Criteria criteria, ObjectMapper mapper) throws IOException {
         super(apiKey, criteria, mapper);
         OkHttpClient customHttpClient = new OkHttpClient.Builder()
                 .callTimeout(Duration.ofSeconds(40))
@@ -47,35 +47,45 @@ public class GeminiAiProvider extends AiProvider {
                         .build())
                 .build();
         this.requestConfig = buildConfig();
+                this.contentGenerator = (model, prompt, config) -> client.models.generateContent(model, prompt, config).text();
+                }
+
+                GeminiAiProvider(String apiKey, Criteria criteria, ObjectMapper mapper, ContentGenerator contentGenerator)
+                    throws IOException {
+                super(apiKey, criteria, mapper);
+                this.client = null;
+                this.requestConfig = buildConfig();
+                this.contentGenerator = contentGenerator;
     }
 
     @Override
-    public AnalysisResult analyze(TweetBatch batch) throws IOException, AiProviderException {
-
-        String prompt = buildPrompt(batch, criteriaNode);
+    public AnalysisResult analyze(TweetBatch batch) throws RetryableException, BatchException, FatalException {
         try {
-            GenerateContentResponse response = client.models.generateContent(
-                    MODEL,
-                    prompt,
-                    requestConfig);
-            String jsonResponse = response.text();
+            String prompt = buildPrompt(batch, criteriaNode);
+            String jsonResponse = contentGenerator.generate(MODEL, prompt, requestConfig);
+            if (jsonResponse == null || jsonResponse.isEmpty()) {
+                throw new BatchException("Gemini responded with an empty response");
+            }
             return mapper.readValue(jsonResponse, AnalysisResult.class);
+
         } catch (ApiException e) {
             Optional<Integer> code = Optional.ofNullable(e.code());
             if (code.isEmpty()) {
-                throw AiProviderException.fromMessage(e);
+                ErrorResolver.throwFromMessage(e);
             }
-            Integer statusCode = code.get();
-            if (statusCode >= 400 && statusCode <= 405) {
-                throw new FatalException(e, code);
+            if (code.get() == 408 || code.get() == 429 || code.get() >= 500) {
+                throw new RetryableException(e);
             }
-            if (statusCode == 429 || statusCode >= 500) {
-                throw new RetryableException(e, code);
+            if (code.get() >= 400) {
+                throw new FatalException(e);
             }
-            throw new BatchException(e, code, batch);
+            throw new BatchException(e);
         } catch (GenAiIOException e) {
-            throw new RetryableException(e, Optional.empty());
+            throw new RetryableException("Error while sending request to Gemini", e);
+        } catch (JsonProcessingException e) {
+            throw new FatalException("Could not properly parse json", e);
         }
+
     }
 
     private String buildPrompt(TweetBatch batch, JsonNode criteria) throws JsonProcessingException {
@@ -99,7 +109,17 @@ public class GeminiAiProvider extends AiProvider {
         batchJson.set("tweets", tweets);
 
         return String.format(
-                "Evaluate every tweet against the supplied deletion criteria. \n Rules: \n1. Decision must be either KEEP or DELETE. \n2. Preserve tweet ordering. \n3. Give reasons for your decision \n4. Never invent tweet ids. \n Deletion Criteria: \n %s \n Tweet Batch: \n %s \n",
+                """
+                                Evaluate every tweet against the supplied deletion criteria.
+                                Rules:
+                                1. Decision must be either KEEP or DELETE.
+                                2. Give reasons for your decision
+                                3. Never invent tweet ids.
+                                Deletion Criteria:
+                                %s
+                                Tweet Batch:
+                                %s
+                        """,
                 mapper.writerWithDefaultPrettyPrinter().writeValueAsString(criteria),
                 mapper.writerWithDefaultPrettyPrinter().writeValueAsString(batchJson));
     }
@@ -171,4 +191,11 @@ public class GeminiAiProvider extends AiProvider {
                 .build();
     }
 
+}
+
+@FunctionalInterface
+interface ContentGenerator {
+
+    String generate(String model, String prompt, GenerateContentConfig config)
+            throws ApiException, GenAiIOException;
 }

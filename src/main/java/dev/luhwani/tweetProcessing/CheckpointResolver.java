@@ -14,10 +14,12 @@ import dev.luhwani.model.Checkpoint;
 
 public final class CheckpointResolver {
 
-    private static final String CSV_HEADER = "tweet_link,decision,reason";
+    // changes to the header here should also be applied to the
+    // TweetDecision class
+    static final String CSV_HEADER = "tweet_link,decision,reason";
 
     private static final Path CHECKPOINT_PATH = AuditPaths.CHECKPOINT_PATH;
-    private static final Path OUTPUT_PATH = AuditPaths.OUTPUT_PATH;
+    private static final Path CSV_PATH = AuditPaths.CSV_PATH;
 
     private final ObjectMapper objectMapper;
 
@@ -29,11 +31,11 @@ public final class CheckpointResolver {
         this(new ObjectMapper());
     }
 
-    public Checkpoint load() {
-        return load(CHECKPOINT_PATH, OUTPUT_PATH);
+    public Checkpoint load() throws FatalException {
+        return load(CHECKPOINT_PATH, CSV_PATH);
     }
 
-    Checkpoint load(Path checkpointPath, Path outputPath) {
+    Checkpoint load(Path checkpointPath, Path outputPath) throws FatalException {
         if (checkpointPath == null) {
             throw new IllegalArgumentException("Checkpoint path cannot be null");
         }
@@ -43,12 +45,14 @@ public final class CheckpointResolver {
 
         try {
 
-            if (Files.exists(checkpointPath) && Files.exists(outputPath)) {
-                Checkpoint checkpoint = objectMapper.readValue(checkpointPath.toFile(), Checkpoint.class);
-                return checkpoint;
+            boolean checkpointExists = Files.exists(checkpointPath);
+            boolean outputExists = Files.exists(outputPath);
+
+            if (checkpointExists && outputExists) {
+                return objectMapper.readValue(checkpointPath.toFile(), Checkpoint.class);
             }
 
-            if (!Files.exists(checkpointPath) && !Files.exists(outputPath)) {
+            if (!checkpointExists && !outputExists) {
                 Files.createDirectories(checkpointPath.getParent());
                 Files.createDirectories(outputPath.getParent());
                 Files.writeString(
@@ -57,15 +61,30 @@ public final class CheckpointResolver {
                         StandardCharsets.UTF_8,
                         StandardOpenOption.CREATE,
                         StandardOpenOption.TRUNCATE_EXISTING);
-
-                objectMapper.writerWithDefaultPrettyPrinter().writeValue(checkpointPath.toFile(), Checkpoint.empty());
+                objectMapper.writerWithDefaultPrettyPrinter()
+                        .writeValue(checkpointPath.toFile(), Checkpoint.empty());
                 return Checkpoint.empty();
             }
+
+            throw new IllegalStateException(
+                    "Checkpoint and output files must exist together: checkpoint=" + checkpointPath +
+                            ", output=" + outputPath);
 
         } catch (IOException e) {
             throw new FatalException("Could not resolve audit progress: " + e.getMessage(), e);
         }
 
-        throw new IllegalStateException("Could not resolve audit progess. Checkpoint file, or output file missing");
+    }
+
+    public Checkpoint fromFile() throws IOException {
+        return fromFile(CHECKPOINT_PATH);
+    }
+
+    Checkpoint fromFile(Path checkpointPath) throws IOException {
+        if (checkpointPath == null) {
+            throw new IllegalArgumentException("Checkpoint path cannot be null");
+        }
+        Checkpoint checkpoint = objectMapper.readValue(checkpointPath.toFile(), Checkpoint.class);
+        return checkpoint;
     }
 }

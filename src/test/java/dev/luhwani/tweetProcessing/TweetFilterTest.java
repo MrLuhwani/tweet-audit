@@ -62,10 +62,6 @@ class TweetFilterTest {
     }
 
     private Checkpoint checkpointWithSuccessfulBatches(Integer... batchNumbers) {
-        return new Checkpoint(
-                new HashSet<>(List.of(batchNumbers)),
-                new HashSet<>(),
-                0,
-                "");
+        return new Checkpoint(new HashSet<>(List.of(batchNumbers)));
     }
 }

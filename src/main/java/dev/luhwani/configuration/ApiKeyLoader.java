@@ -8,7 +8,7 @@ public final class ApiKeyLoader {
     private ApiKeyLoader() {
     }
 
-    public static String load() {
+    public static String load() throws FatalException {
         String apiKey = System.getenv("GEMINI_API_KEY");
 
         if (apiKey == null || apiKey.isBlank()) {
