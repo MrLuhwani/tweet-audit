@@ -6,7 +6,7 @@ I chose Java because it is the language I want to specialize in. Its type system
 
 ## Architecture: Concurrent Batch Processing with Checkpoints
 
-The application loads the X archive, converts tweets into fixed-size batches, filters successful batches written previously in the checkpoint, and sends unprocessed batches to the AI provider used for evaluation. The batches are evaluated concurrently, and errors that occur during processing are split into the cateogries stated [here](#error-handling-and-retries). An output writer consumes the results and uses a single thread to write to the CSV file and checkpoint json. The async workflow introducedshared state between the request executor, and output writer but the trade of simplicity for speed makes the audit process quicker for large tweet archives.
+The application loads the X archive, converts tweets into fixed-size batches, filters successful batches written previously in the checkpoint, and sends unprocessed batches to the AI provider used for evaluation. The batches are evaluated concurrently, and errors that occur during processing are split into retryable, batch failures, and fatal. An output writer consumes the results and uses a single thread to write to the CSV file and checkpoint json. The async workflow introduced shared state between the request executor, and output writer but the trade of simplicity for speed makes the audit process quicker for large tweet archives.
 
 When batch size choices become configurable, you also get the benefit of being able to process more tweets, and since that also means an increased response time from the AI provider, you also have the benefit of being able to stay within your rate limit quota. The downside is that you spend more tokens per request.
 
