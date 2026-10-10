@@ -141,9 +141,6 @@ Here are the steps to filter the results of the csv in `Microsoft Excel`.
 
 These are other features I plan to implement:
 
-- Add docker support
 - Add model configuration options
-- Add options to allow or remove retweets
 - Add batch size configuration options
-- Add a way to type out a criteria and determine the specifications based on the typed out text using an AI model.
 - Add CI/CD
