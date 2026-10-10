@@ -1,5 +1,6 @@
 package dev.luhwani.model;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.databind.JsonNode;
 
 /**
@@ -8,5 +9,5 @@ import com.fasterxml.jackson.databind.JsonNode;
  * the rules defined in a JSON structure.
  */
 public record Criteria(
-        JsonNode rules) {
+        @JsonAlias("criteria") JsonNode rules) {
 }

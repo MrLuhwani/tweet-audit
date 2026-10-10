@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -30,6 +32,35 @@ class TweetArchiveLoaderTest {
         List<TweetData> tweets = new TweetArchiveLoader(objectMapper, archive).load();
 
         assertEquals(4, tweets.size());
+    }
+
+    @Test
+    void loadsTweetsFromZipArchiveDataPath() throws Exception {
+        Path archive = tempDir.resolve("tweets.zip");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            zip.putNextEntry(new ZipEntry("data/tweets.js"));
+            zip.write("window.YTD.tweets.part0 = [{\"tweet\": {\"id\": \"1\", \"full_text\": \"Zipped tweet\"}}];"
+                    .getBytes());
+            zip.closeEntry();
+        }
+
+        List<TweetData> tweets = new TweetArchiveLoader(objectMapper, archive).load();
+
+        assertEquals(1, tweets.size());
+        assertTweet(tweets.get(0), "1", "Zipped tweet");
+    }
+
+    @Test
+    void throwsWhenZipDoesNotContainTweetsFile() throws Exception {
+        Path archive = tempDir.resolve("tweets.zip");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            zip.putNextEntry(new ZipEntry("data/other.js"));
+            zip.write("[]".getBytes());
+            zip.closeEntry();
+        }
+
+        assertThrows(FatalException.class,
+                () -> new TweetArchiveLoader(objectMapper, archive).load());
     }
 
     @Test

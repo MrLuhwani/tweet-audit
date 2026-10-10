@@ -6,19 +6,12 @@ import java.util.Set;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import dev.luhwani.configuration.AuditPaths;
 import dev.luhwani.model.Checkpoint;
 
 final class CheckpointWriter {
 
-    private static final Path CHECKPOINT_PATH = AuditPaths.CHECKPOINT_PATH;
-
     private final ObjectMapper objectMapper;
     private final Path checkpointPath;
-
-    CheckpointWriter(ObjectMapper objectMapper) {
-        this(objectMapper, CHECKPOINT_PATH);
-    }
 
     CheckpointWriter(ObjectMapper objectMapper, Path checkpointPath) {
         this.objectMapper = objectMapper;

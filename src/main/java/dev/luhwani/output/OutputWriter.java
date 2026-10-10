@@ -12,15 +12,12 @@ import java.util.concurrent.TimeUnit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import dev.luhwani.configuration.AuditPaths;
 import dev.luhwani.error.FatalException;
 import dev.luhwani.model.AnalysisResult;
 import dev.luhwani.model.Checkpoint;
 
 /** Consumes analysis results and persists CSV rows and checkpoint progress. */
 public final class OutputWriter implements AutoCloseable {
-
-    private static final Path CSV_PATH = AuditPaths.CSV_PATH;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
@@ -34,21 +31,29 @@ public final class OutputWriter implements AutoCloseable {
     private Future<?> task;
 
     /**
-     * Creates a writer for the configured CSV and checkpoint paths.
+     * Creates a writer for the CSV and checkpoint files in the supplied directory.
      *
      * @param objectMapper mapper used to serialize checkpoint data
      * @param resultQueue queue of completed analysis results
      * @param countDown latch used to detect when all batches have finished
      * @param checkpoint current checkpoint to update
+     * @param outputDirectory directory where output files are stored
      * @throws IOException if an output file cannot be opened
      */
     public OutputWriter(ObjectMapper objectMapper, BlockingQueue<AnalysisResult> resultQueue, CountDownLatch countDown,
-            Checkpoint checkpoint)
+            Checkpoint checkpoint, Path outputDirectory)
             throws IOException {
-        this(objectMapper, resultQueue, countDown, checkpoint, CSV_PATH, AuditPaths.CHECKPOINT_PATH);
+        if (outputDirectory == null) {
+            throw new IllegalArgumentException("Output directory cannot be null");
+        }
+        this.csvWriter = new CSVWriter(outputDirectory.resolve("output.csv"));
+        this.checkpointWriter = new CheckpointWriter(objectMapper, outputDirectory.resolve("checkpoint.json"));
+        this.resultQueue = resultQueue;
+        this.countDown = countDown;
+        this.checkpoint = checkpoint;
     }
 
-    OutputWriter(ObjectMapper objectMapper, BlockingQueue<AnalysisResult> resultQueue, CountDownLatch countDown,
+    public OutputWriter(ObjectMapper objectMapper, BlockingQueue<AnalysisResult> resultQueue, CountDownLatch countDown,
             Checkpoint checkpoint, Path csvPath, Path checkpointPath) throws IOException {
         this.csvWriter = new CSVWriter(csvPath);
         this.checkpointWriter = new CheckpointWriter(objectMapper, checkpointPath);
@@ -89,7 +94,7 @@ public final class OutputWriter implements AutoCloseable {
 
     private void write() throws InterruptedException, IOException {
         while (true) {
-            AnalysisResult result = resultQueue.poll(500, TimeUnit.MILLISECONDS);
+            AnalysisResult result = resultQueue.poll(200, TimeUnit.MILLISECONDS);
             if (result == null) {
                 if (countDown.getCount() == 0) {
                     break;

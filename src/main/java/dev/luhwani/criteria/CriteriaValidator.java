@@ -7,6 +7,7 @@ import dev.luhwani.error.FatalException;
 import dev.luhwani.model.Criteria;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -45,21 +46,30 @@ public final class CriteriaValidator {
                 throw new FatalException("Criteria file does not exist: " + criteriaPath);
             }
 
-            String contents = Files.readString(criteriaPath);
-            if (contents.isBlank()) {
-                throw new FatalException("Criteria file is empty: " + criteriaPath);
-            }
-
-            JsonNode json = objectMapper.readTree(contents);
-            if (json == null || containsEmptyContainer(json)) {
-                throw new FatalException("Criteria file is empty: " + criteriaPath);
-            }
-
-            return objectMapper.treeToValue(json, Criteria.class);
+            return validate(Files.newInputStream(criteriaPath), criteriaPath.toString());
         } catch (JsonProcessingException e) {
             throw new FatalException("Criteria file contains invalid JSON: " + criteriaPath, e);
         } catch (IOException e) {
             throw new FatalException("Unable to read criteria file: " + criteriaPath, e);
+        }
+    }
+
+    /** Reads and validates criteria supplied by a classpath resource or another stream. */
+    public Criteria validate(InputStream criteriaStream, String sourceDescription) throws FatalException {
+        if (criteriaStream == null) {
+            throw new IllegalArgumentException("Criteria stream cannot be null");
+        }
+
+        try (criteriaStream) {
+            JsonNode json = objectMapper.readTree(criteriaStream);
+            if (json == null || containsEmptyContainer(json)) {
+                throw new FatalException("Criteria file is empty: " + sourceDescription);
+            }
+            return objectMapper.treeToValue(json, Criteria.class);
+        } catch (JsonProcessingException e) {
+            throw new FatalException("Criteria file contains invalid JSON: " + sourceDescription, e);
+        } catch (IOException e) {
+            throw new FatalException("Unable to read criteria file: " + sourceDescription, e);
         }
     }
 

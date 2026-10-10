@@ -14,6 +14,8 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import dev.luhwani.error.FatalException;
 import dev.luhwani.model.Checkpoint;
 
@@ -24,7 +26,12 @@ class CheckpointResolverTest {
     @TempDir
     Path tempDir;
 
-    private final CheckpointResolver resolver = new CheckpointResolver();
+    private CheckpointResolver resolver;
+
+    @org.junit.jupiter.api.BeforeEach
+    void setUp() {
+        resolver = new CheckpointResolver(new ObjectMapper(), tempDir.resolve("output"));
+    }
 
     @Test
     void createsEmptyCheckpointAndCsvWhenNeitherFileExists() throws Exception {
@@ -37,6 +44,15 @@ class CheckpointResolverTest {
         assertTrue(Files.exists(checkpointPath));
         assertEquals(CSV_HEADER + System.lineSeparator(), Files.readString(outputPath));
         assertTrue(resolver.load(checkpointPath, outputPath).successfulBatches().isEmpty());
+    }
+
+    @Test
+    void loadUsesConfiguredOutputDirectory() throws Exception {
+        Checkpoint checkpoint = resolver.load();
+
+        assertTrue(checkpoint.successfulBatches().isEmpty());
+        assertTrue(Files.exists(tempDir.resolve("output/checkpoint.json")));
+        assertTrue(Files.exists(tempDir.resolve("output/output.csv")));
     }
 
     @Test

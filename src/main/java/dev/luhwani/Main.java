@@ -32,7 +32,7 @@ public final class Main {
 
     /** Starts the tweet audit command-line application. */
     public static void main(String[] args) {
-        TweetAuditApp.run();
+        TweetAuditApp.run(args);
         // After the application finishes running, some google worker
         // threads are still awake in the JVM. They have no negative
         // effect on the application, but to exit without waiting for

@@ -8,7 +8,6 @@ import java.nio.file.StandardOpenOption;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import dev.luhwani.configuration.AuditPaths;
 import dev.luhwani.error.FatalException;
 import dev.luhwani.model.Checkpoint;
 
@@ -19,22 +18,36 @@ public final class CheckpointResolver {
     // TweetDecision class
     static final String CSV_HEADER = "tweet_link,decision,reason";
 
-    private static final Path CHECKPOINT_PATH = AuditPaths.CHECKPOINT_PATH;
-    private static final Path CSV_PATH = AuditPaths.CSV_PATH;
-
     private final ObjectMapper objectMapper;
+    private final Path outputDirectory;
+    private final Path checkpointPath;
+    private final Path outputPath;
 
     /**
-     * Creates a resolver using the supplied JSON mapper.
+     * Creates a resolver for the supplied output directory.
      *
      * @param objectMapper mapper used to read and write checkpoints
+     * @param outputDirectory directory containing the CSV and checkpoint files
      */
-    public CheckpointResolver(ObjectMapper objectMapper) {
+    public CheckpointResolver(ObjectMapper objectMapper, Path outputDirectory) {
         this.objectMapper = objectMapper;
+        if (outputDirectory == null) {
+            throw new IllegalArgumentException("Output directory cannot be null");
+        }
+        this.outputDirectory = outputDirectory;
+        this.checkpointPath = outputDirectory.resolve("checkpoint.json");
+        this.outputPath = outputDirectory.resolve("output.csv");
     }
 
-    CheckpointResolver() {
-        this(new ObjectMapper());
+    /** Creates a resolver for explicit checkpoint and CSV files. */
+    public CheckpointResolver(ObjectMapper objectMapper, Path checkpointPath, Path outputPath) {
+        this.objectMapper = objectMapper;
+        if (checkpointPath == null || outputPath == null) {
+            throw new IllegalArgumentException("Checkpoint and output paths cannot be null");
+        }
+        this.outputDirectory = null;
+        this.checkpointPath = checkpointPath;
+        this.outputPath = outputPath;
     }
 
     /**
@@ -46,7 +59,7 @@ public final class CheckpointResolver {
      * @throws IllegalStateException if only one of the two files exists
      */
     public Checkpoint load() throws FatalException {
-        return load(CHECKPOINT_PATH, CSV_PATH);
+        return load(checkpointPath, outputPath);
     }
 
     Checkpoint load(Path checkpointPath, Path outputPath) throws FatalException {
@@ -97,7 +110,7 @@ public final class CheckpointResolver {
      * @throws IOException if the checkpoint cannot be read or deserialized
      */
     public Checkpoint fromFile() throws IOException {
-        return fromFile(CHECKPOINT_PATH);
+        return fromFile(checkpointPath);
     }
 
     Checkpoint fromFile(Path checkpointPath) throws IOException {

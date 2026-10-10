@@ -59,6 +59,29 @@ class OutputWriterTest {
     }
 
     @Test
+    void writesToConfiguredOutputDirectory() throws Exception {
+        Path outputDirectory = tempDir.resolve("configured-output");
+        Files.createDirectories(outputDirectory);
+        Files.writeString(outputDirectory.resolve("output.csv"), "tweet_link,decision,reason\n",
+                StandardCharsets.UTF_8);
+        LinkedBlockingQueue<AnalysisResult> results = new LinkedBlockingQueue<>();
+        CountDownLatch countDown = new CountDownLatch(1);
+        results.add(result(1, "111"));
+
+        try (OutputWriter writer = new OutputWriter(objectMapper, results, countDown, Checkpoint.empty(),
+                outputDirectory)) {
+            writer.start();
+            countDown.countDown();
+            writer.awaitCompletion();
+        }
+
+        assertEquals(2, Files.readAllLines(outputDirectory.resolve("output.csv"), StandardCharsets.UTF_8).size());
+        assertEquals(java.util.Set.of(1),
+                objectMapper.readValue(outputDirectory.resolve("checkpoint.json").toFile(), Checkpoint.class)
+                        .successfulBatches());
+    }
+
+    @Test
     void waitsForResultsBeforeCompletingWhenProducerHasNotFinished() throws Exception {
         Path csvPath = tempDir.resolve("output.csv");
         Files.writeString(csvPath, "tweet_link,decision,reason\n", StandardCharsets.UTF_8);
