@@ -32,7 +32,7 @@ class GeminiAiProviderTest {
         String[] capturedPrompt = new String[1];
         GeminiAiProvider provider = providerReturning((model, prompt, config) -> {
             capturedPrompt[0] = prompt;
-            assertEquals("gemini-3.5-flash-lite", model);
+            assertEquals("gemini-2.5-flash", model);
             return response;
         });
 
@@ -74,6 +74,6 @@ class GeminiAiProviderTest {
     }
 
     private GeminiAiProvider providerReturning(ContentGenerator generator) throws Exception {
-        return new GeminiAiProvider("test-key", criteria, objectMapper, generator);
+        return new GeminiAiProvider("test-key", "gemini-2.5-flash", criteria, objectMapper, generator);
     }
 }

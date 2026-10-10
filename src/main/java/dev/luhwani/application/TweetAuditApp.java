@@ -39,15 +39,16 @@ public final class TweetAuditApp {
 	}
 
 	/** Holds the configuration shared by the evaluation components. */
-	private record AppConfig(String apiKey, Criteria criteria) {
+	private record AppConfig(String apiKey, String model, Criteria criteria) {
 	}
 
-	record CliArguments(String apiKey, String tweetArchive, String criteria, String output) {
+	record CliArguments(String apiKey, String model, String tweetArchive, String criteria, String output) {
 	}
 
 	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
 			.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 	private static final Logger LOGGER = Logger.getLogger(TweetAuditApp.class.getName());
+	private static final String DEFAULT_MODEL = "gemini-3.5-flash-lite";
 
 	/**
 	 * Starts the tweet audit workflow.
@@ -65,7 +66,7 @@ public final class TweetAuditApp {
 			Path outputPath = outputDirectory.resolve("output.csv");
 			Path checkpointPath = outputDirectory.resolve("checkpoint.json");
 			Criteria criteria = loadCriteria(cliArguments.criteria());
-			AppConfig config = new AppConfig(cliArguments.apiKey(), criteria);
+			AppConfig config = new AppConfig(cliArguments.apiKey(), cliArguments.model(), criteria);
 			List<TweetBatch> tweetBatches = processTweets(Path.of(cliArguments.tweetArchive()), outputPath,
 				checkpointPath);
 			evaluateTweets(tweetBatches, config, outputPath, checkpointPath);
@@ -89,6 +90,7 @@ public final class TweetAuditApp {
 		}
 
 		String apiKey = null;
+		String model = null;
 		String tweetArchive = null;
 		String criteria = null;
 		String output = null;
@@ -103,6 +105,7 @@ public final class TweetAuditApp {
 			String value = args[++index];
 			switch (option) {
 			case "--api-key" -> apiKey = requireUnset(option, apiKey, value);
+			case "--model" -> model = requireUnset(option, model, value);
 			case "--tweet-archive" -> tweetArchive = requireUnset(option, tweetArchive, value);
 			case "--criteria" -> criteria = requireUnset(option, criteria, value);
 			case "--output" -> output = requireUnset(option, output, value);
@@ -112,7 +115,7 @@ public final class TweetAuditApp {
 		if (apiKey == null || tweetArchive == null) {
 			throw usageError();
 		}
-		return new CliArguments(apiKey, tweetArchive, criteria, output);
+		return new CliArguments(apiKey, model == null ? DEFAULT_MODEL : model, tweetArchive, criteria, output);
 	}
 
 	private static String requireUnset(String option, String currentValue, String value) {
@@ -131,7 +134,7 @@ public final class TweetAuditApp {
 
 	private static String usageMessage() {
 		return "Usage: java -jar tweet-audit-1.0-SNAPSHOT.jar --api-key <key> --tweet-archive <path> "
-				+ "[--criteria <path>] [--output <directory>]";
+				+ "[--model <model>] [--criteria <path>] [--output <directory>]";
 	}
 
 	/**
@@ -202,7 +205,7 @@ public final class TweetAuditApp {
 	private static void evaluateTweets(List<TweetBatch> tweetBatches, AppConfig config, Path outputPath,
 			Path checkpointPath)
 			throws Exception {
-		AiProvider provider = new GeminiAiProvider(config.apiKey, config.criteria, OBJECT_MAPPER);
+		AiProvider provider = new GeminiAiProvider(config.apiKey, config.model, config.criteria, OBJECT_MAPPER);
 		Checkpoint checkpoint = new CheckpointResolver(OBJECT_MAPPER, checkpointPath, outputPath).fromFile();
 		evaluateTweets(tweetBatches, provider, checkpoint, outputPath, checkpointPath);
 	}

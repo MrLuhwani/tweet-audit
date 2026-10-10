@@ -24,7 +24,7 @@ class TweetAuditAppTest {
         assertDoesNotThrow(() -> TweetAuditApp.validArgs(
             new String[] { "--api-key", "api-key", "--tweet-archive", "tweets.zip" }));
         assertDoesNotThrow(() -> TweetAuditApp.validArgs(new String[] {
-            "--api-key", "api-key", "--tweet-archive", "tweets.zip", "--criteria", "criteria.json", "--output",
+            "--api-key", "api-key", "--model", "gemini-2.5-flash", "--tweet-archive", "tweets.zip", "--criteria", "criteria.json", "--output",
             "output"
         }));
     }
@@ -46,6 +46,16 @@ class TweetAuditAppTest {
 
         assertEquals("custom-output", arguments.output());
         assertEquals(null, arguments.criteria());
+        assertEquals("gemini-3.5-flash-lite", arguments.model());
+    }
+
+    @Test
+    void usesProvidedModelWhenConfigured() {
+        TweetAuditApp.CliArguments arguments = TweetAuditApp.parseArgs(new String[] {
+            "--api-key", "api-key", "--model", "gemini-2.5-flash", "--tweet-archive", "tweets.zip"
+        });
+
+        assertEquals("gemini-2.5-flash", arguments.model());
     }
 
     @Test

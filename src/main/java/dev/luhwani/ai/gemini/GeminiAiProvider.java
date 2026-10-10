@@ -29,8 +29,7 @@ import okhttp3.OkHttpClient;
  */
 public class GeminiAiProvider extends AiProvider {
 
-    // TODO: make model choice more confifgurable
-    private final String MODEL = "gemini-3.5-flash-lite";
+    private final String model;
     private final Client client;
     private final GenerateContentConfig requestConfig;
     private final ContentGenerator contentGenerator;
@@ -39,12 +38,14 @@ public class GeminiAiProvider extends AiProvider {
      * Creates a Gemini-backed evaluation provider.
      *
      * @param apiKey Gemini API key
-     * @param criteria rules sent with each evaluation request
+    * @param model Gemini model used for each evaluation request
+    * @param criteria rules sent with each evaluation request
      * @param mapper mapper used to serialize prompts and parse responses
      * @throws IOException if the criteria cannot be prepared for requests
      */
-    public GeminiAiProvider(String apiKey, Criteria criteria, ObjectMapper mapper) throws IOException {
+    public GeminiAiProvider(String apiKey, String configuredModel, Criteria criteria, ObjectMapper mapper) throws IOException {
         super(apiKey, criteria, mapper);
+        this.model = configuredModel;
         OkHttpClient customHttpClient = new OkHttpClient.Builder()
                 .callTimeout(Duration.ofSeconds(40))
                 .build();
@@ -58,9 +59,11 @@ public class GeminiAiProvider extends AiProvider {
                 this.contentGenerator = (model, prompt, config) -> client.models.generateContent(model, prompt, config).text();
                 }
 
-                GeminiAiProvider(String apiKey, Criteria criteria, ObjectMapper mapper, ContentGenerator contentGenerator)
+                GeminiAiProvider(String apiKey, String configuredModel, Criteria criteria, ObjectMapper mapper,
+                        ContentGenerator contentGenerator)
                     throws IOException {
                 super(apiKey, criteria, mapper);
+                this.model = configuredModel;
                 this.client = null;
                 this.requestConfig = buildConfig();
                 this.contentGenerator = contentGenerator;
@@ -79,7 +82,7 @@ public class GeminiAiProvider extends AiProvider {
     public AnalysisResult analyze(TweetBatch batch) throws RetryableException, BatchException, FatalException {
         try {
             String prompt = buildPrompt(batch, criteriaNode);
-            String jsonResponse = contentGenerator.generate(MODEL, prompt, requestConfig);
+            String jsonResponse = contentGenerator.generate(model, prompt, requestConfig);
             if (jsonResponse == null || jsonResponse.isEmpty()) {
                 throw new BatchException("Gemini responded with an empty response");
             }

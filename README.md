@@ -80,13 +80,14 @@ java -jar target/tweet-audit-1.0-SNAPSHOT.jar --api-key your-api-key --tweet-arc
 You can also pass any optional argument:
 
 ```bash
-java -jar target/tweet-audit-1.0-SNAPSHOT.jar --api-key your-api-key --tweet-archive path/to/tweets.zip --criteria path/to/criteria.json --output path/to/output
+java -jar target/tweet-audit-1.0-SNAPSHOT.jar --api-key your-api-key --tweet-archive path/to/tweets.zip --model gemini-3.5-flash --criteria path/to/criteria.json --output path/to/output
 ```
 
 The available options are:
 
 ```text
 --api-key <key>                  Gemini API key (required)
+--model <model>                  Optional Gemini model (defaults to gemini-3.5-flash-lite)
 --tweet-archive <path>           Path to the X archive (required)
 --criteria <path>                Optional criteria JSON file
 --output <directory>             Optional output directory
@@ -114,7 +115,7 @@ See [TRADEOFFS.md](TRADEOFFS.md) for detailed architectural decisions and design
 ### Other Implementation Notes
 
 - Tweets are processed in batches of 60 tweets. The batch size is not configurable yet.
-- The tool uses `gemini-3.5-flash-lite` internally. The model choice is not configurable for now.
+- The model can be selected with the optional `--model` argument. If provided, the value is passed directly to Gemini; an invalid model stops processing with the API's 404 error. Otherwise, the tool uses `gemini-3.5-flash-lite`.
 - Analysis results are created in `output/output.csv` by default, or in the output directory supplied on the command line.
 - If the tool closes for any reason, the CLI creates `checkpoint.json` in the same output folder.
 - Do not change or delete the output folder until the audit is complete. The CSV and checkpoint must stay together to prevent an audit from being rerun incorrectly.
@@ -141,6 +142,5 @@ Here are the steps to filter the results of the csv in `Microsoft Excel`.
 
 These are other features I plan to implement:
 
-- Add model configuration options
 - Add batch size configuration options
 - Add CI/CD
