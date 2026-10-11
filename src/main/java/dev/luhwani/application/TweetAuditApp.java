@@ -42,13 +42,16 @@ public final class TweetAuditApp {
 	private record AppConfig(String apiKey, String model, Criteria criteria) {
 	}
 
-	record CliArguments(String apiKey, String model, String tweetArchive, String criteria, String output) {
+	record CliArguments(String apiKey, String model, String tweetArchive, String criteria, String output, int batchSize) {
 	}
 
 	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
 			.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 	private static final Logger LOGGER = Logger.getLogger(TweetAuditApp.class.getName());
 	private static final String DEFAULT_MODEL = "gemini-3.5-flash-lite";
+	
+	// if you ever edit batch size, edit also in the TweetBatchFactory class
+	private static final int DEFAULT_BATCH_SIZE = 60;
 
 	/**
 	 * Starts the tweet audit workflow.
@@ -68,7 +71,7 @@ public final class TweetAuditApp {
 			Criteria criteria = loadCriteria(cliArguments.criteria());
 			AppConfig config = new AppConfig(cliArguments.apiKey(), cliArguments.model(), criteria);
 			List<TweetBatch> tweetBatches = processTweets(Path.of(cliArguments.tweetArchive()), outputPath,
-				checkpointPath);
+				checkpointPath, cliArguments.batchSize());
 			evaluateTweets(tweetBatches, config, outputPath, checkpointPath);
 			LOGGER.info("Tweet audit application completed successfully");
 		} catch (Exception e) {
@@ -94,6 +97,7 @@ public final class TweetAuditApp {
 		String tweetArchive = null;
 		String criteria = null;
 		String output = null;
+		String batchSize = null;
 		for (int index = 0; index < args.length; index++) {
 			String option = args[index];
 			if (!option.startsWith("--")) {
@@ -104,18 +108,33 @@ public final class TweetAuditApp {
 			}
 			String value = args[++index];
 			switch (option) {
+
 			case "--api-key" -> apiKey = requireUnset(option, apiKey, value);
 			case "--model" -> model = requireUnset(option, model, value);
 			case "--tweet-archive" -> tweetArchive = requireUnset(option, tweetArchive, value);
 			case "--criteria" -> criteria = requireUnset(option, criteria, value);
 			case "--output" -> output = requireUnset(option, output, value);
+			case "--batch-size" -> batchSize = requireUnset(option, batchSize, value);
 			default -> throw new IllegalArgumentException("Unknown option: " + option + "\n" + usageMessage());
 			}
 		}
 		if (apiKey == null || tweetArchive == null) {
 			throw usageError();
 		}
-		return new CliArguments(apiKey, model == null ? DEFAULT_MODEL : model, tweetArchive, criteria, output);
+		return new CliArguments(apiKey, model == null ? DEFAULT_MODEL : model, tweetArchive, criteria, output,
+				batchSize == null ? DEFAULT_BATCH_SIZE : parseBatchSize(batchSize));
+	}
+
+	private static int parseBatchSize(String value) {
+		try {
+			int batchSize = Integer.parseInt(value);
+			if (batchSize <= 0) {
+				throw new IllegalArgumentException("Batch size must be positive");
+			}
+			return batchSize;
+		} catch (NumberFormatException e) {
+			throw new IllegalArgumentException("Batch size must be an integer", e);
+		}
 	}
 
 	private static String requireUnset(String option, String currentValue, String value) {
@@ -134,7 +153,7 @@ public final class TweetAuditApp {
 
 	private static String usageMessage() {
 		return "Usage: java -jar tweet-audit-1.0-SNAPSHOT.jar --api-key <key> --tweet-archive <path> "
-				+ "[--model <model>] [--criteria <path>] [--output <directory>]";
+				+ "[--model <model>] [--criteria <path>] [--output <directory>] [--batch-size <positive integer>]";
 	}
 
 	/**
@@ -180,11 +199,12 @@ public final class TweetAuditApp {
 	 * @return a list of tweet batches
 	 * @throws FatalException
 	 */
-	private static List<TweetBatch> processTweets(Path tweetArchivePath, Path outputPath, Path checkpointPath)
+	private static List<TweetBatch> processTweets(Path tweetArchivePath, Path outputPath, Path checkpointPath,
+			int batchSize)
 			throws FatalException {
 		List<TweetData> tweets = new TweetArchiveLoader(OBJECT_MAPPER, tweetArchivePath).load();
 		LOGGER.info("Parsed " + tweets.size() + " tweets\n");
-		List<TweetBatch> tweetBatches = TweetBatchFactory.createBatches(tweets);
+		List<TweetBatch> tweetBatches = TweetBatchFactory.createBatches(tweets, batchSize);
 		Checkpoint checkpoint = new CheckpointResolver(OBJECT_MAPPER, checkpointPath, outputPath).load();
 		tweetBatches = TweetFilter.filter(tweetBatches, checkpoint);
 		return tweetBatches;
@@ -217,6 +237,7 @@ public final class TweetAuditApp {
 			return;
 		}
 		LOGGER.info("Evaluating " + tweetBatches.size() + " tweet batches");
+		LOGGER.info("Resuming from batch " + tweetBatches.get(0).batchNumber() + "/" + tweetBatches.getLast().batchNumber());
 		BlockingQueue<TweetBatch> batchQueue = new ArrayBlockingQueue<>(tweetBatches.size());
 		for (TweetBatch batch : tweetBatches) {
 			batchQueue.put(batch);

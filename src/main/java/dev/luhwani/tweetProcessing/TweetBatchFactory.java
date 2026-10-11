@@ -9,14 +9,21 @@ import dev.luhwani.model.TweetData;
 /** Creates fixed-size, sequentially numbered batches from archived tweets. */
 public final class TweetBatchFactory {
 
-    // TODO: make more configurable
+    // for easy testing
     private static final int BATCH_SIZE = 60;
 
     private TweetBatchFactory() {
     }
 
-    // for easy testablility, this method is package-private
-    static List<TweetBatch> createBatches(List<TweetData> tweets, int batchSize) {
+    /**
+     * Creates sequential batches using the application's default batch size.
+     *
+     * @param tweets tweets to divide into batches
+     * @param batchSize the number of tweets in each batch
+     * @return immutable, sequentially numbered batches
+     * @throws IllegalArgumentException if {@code tweets} is null or empty
+     */
+    public static List<TweetBatch> createBatches(List<TweetData> tweets, int batchSize) {
         if (batchSize <= 0) {
             throw new IllegalArgumentException("Batch Sizes must be positive");
         }
@@ -34,14 +41,8 @@ public final class TweetBatchFactory {
         return List.copyOf(batches);
     }
 
-    /**
-     * Creates sequential batches using the application's default batch size.
-     *
-     * @param tweets tweets to divide into batches
-     * @return immutable, sequentially numbered batches
-     * @throws IllegalArgumentException if {@code tweets} is null or empty
-     */
-    public static List<TweetBatch> createBatches(List<TweetData> tweets) {
+    static List<TweetBatch> createBatches(List<TweetData> tweets) {
         return createBatches(tweets, BATCH_SIZE);
     }
+
 }

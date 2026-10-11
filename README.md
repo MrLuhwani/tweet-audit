@@ -22,7 +22,9 @@ Before you go into reading how to use this tool, I want to clarify some things:
 Info on how to use the tool has been written below:
 
 ## Prerequisites
+
 These are the things you need to run this software application:
+
 - [Java 21](https://www.oracle.com/java/technologies/javase-jdk21-downloads.html)
 - [Maven 3.9+](https://maven.apache.org/download.cgi)
 - Download your X archive from Settings → Your Account → Download an archive of your data (takes 24-48 hours)
@@ -30,15 +32,23 @@ These are the things you need to run this software application:
 - Optionally create a file named `criteria.json` and define your criteria there
 
 ## Installations
+
 Clone the repo from github:
+
 ```bash
 git clone https://github.com/MrLuhwani/tweet-audit.git
 cd tweet-audit
-mvn clean install
 ```
+
 You can also download the project zip from [my github](https://github.com/MrLuhwani/tweet-audit)
 
 ## Usage Instructions
+
+In the command line, run the following command
+
+```bash
+mvn clean package
+```
 
 - Pass your Gemini API key and the path to your X archive using named command-line options.
 - You can optionally pass a criteria file's directory. If omitted, the tool uses the packaged [`config.example.json`](src\main\resources\config.example.json) criteria
@@ -46,9 +56,7 @@ You can also download the project zip from [my github](https://github.com/MrLuhw
 ```json
 {
   "criteria": {
-    "forbidden_words": [
-      ""
-    ],
+    "forbidden_words": [""],
     "topics_to_exclude": [
       "Outdated political opinions",
       "Controversial statements"
@@ -64,12 +72,6 @@ You can also download the project zip from [my github](https://github.com/MrLuhw
 
 - It is also optional to pass an output directory. If omitted, an `output` folder is created in the current working directory.
 - The output folder contains both `output.csv` and `checkpoint.json`.
-
-Build the fat jar:
-
-```bash
-mvn clean package
-```
 
 Run the app with the two required named arguments:
 
@@ -91,6 +93,7 @@ The available options are:
 --tweet-archive <path>           Path to the X archive (required)
 --criteria <path>                Optional criteria JSON file
 --output <directory>             Optional output directory
+--batch-size <number>            Optional tweet batch size (defaults to 60)
 ```
 
 Also, if any of the file path contains spaces, place it in a single quote when running the app
@@ -114,7 +117,9 @@ See [TRADEOFFS.md](TRADEOFFS.md) for detailed architectural decisions and design
 
 ### Other Implementation Notes
 
-- Tweets are processed in batches of 60 tweets. The batch size is not configurable yet.
+- Tweets are processed in batches of 60 tweets by default. Use the optional `--batch-size` argument to choose a positive integer batch size.
+- Once an audit has started with a particular batch size, do not change it until the audit is complete. The tool uses the batch number to identify the audit checkpoint. If you need to change the batch size, delete the audit output, including `output.csv` and `checkpoint.json`, and start again.
+- Batch sizes below 50 are not recommended because they make the audit slower. The maximum practical batch size depends on your API key subscription and the evaluation model. For a free user using `gemini-3.5-flash-lite`, approximately 250-300 is technically the maximum before warning responses or other internal errors may occur.
 - The model can be selected with the optional `--model` argument. If provided, the value is passed directly to Gemini; an invalid model stops processing with the API's 404 error. Otherwise, the tool uses `gemini-3.5-flash-lite`.
 - Analysis results are created in `output/output.csv` by default, or in the output directory supplied on the command line.
 - If the tool closes for any reason, the CLI creates `checkpoint.json` in the same output folder.
@@ -122,11 +127,10 @@ See [TRADEOFFS.md](TRADEOFFS.md) for detailed architectural decisions and design
 - The `checkpoint` represents which batch of tweets were successfully processed.
 
 ```json
-{"successfulBatches":[1,2,3,4,5,6,10,11,12,13,14,15,16]}
+{ "successfulBatches": [1, 2, 3, 4, 5, 6, 10, 11, 12, 13, 14, 15, 16] }
 ```
 
 - When the tool is reloaded, it checks the checkpoint file, and filters out successful batches
-- If you wish to go into the source code and edit batch size after first run, to prevent inconsistencies with the checkpoint file, you would have to delete the output folder also.
 
 ## Filtering Results
 
@@ -142,5 +146,4 @@ Here are the steps to filter the results of the csv in `Microsoft Excel`.
 
 These are other features I plan to implement:
 
-- Add batch size configuration options
 - Add CI/CD

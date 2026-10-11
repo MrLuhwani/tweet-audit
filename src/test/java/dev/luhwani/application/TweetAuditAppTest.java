@@ -47,6 +47,7 @@ class TweetAuditAppTest {
         assertEquals("custom-output", arguments.output());
         assertEquals(null, arguments.criteria());
         assertEquals("gemini-3.5-flash-lite", arguments.model());
+        assertEquals(60, arguments.batchSize());
     }
 
     @Test
@@ -56,6 +57,28 @@ class TweetAuditAppTest {
         });
 
         assertEquals("gemini-2.5-flash", arguments.model());
+    }
+
+    @Test
+    void acceptsPositiveBatchSize() {
+        TweetAuditApp.CliArguments arguments = TweetAuditApp.parseArgs(new String[] {
+            "--api-key", "api-key", "--tweet-archive", "tweets.zip", "--batch-size", "125"
+        });
+
+        assertEquals(125, arguments.batchSize());
+    }
+
+    @Test
+    void rejectsInvalidBatchSize() {
+        assertThrows(IllegalArgumentException.class, () -> TweetAuditApp.parseArgs(new String[] {
+            "--api-key", "api-key", "--tweet-archive", "tweets.zip", "--batch-size", "-1"
+        }));
+        assertThrows(IllegalArgumentException.class, () -> TweetAuditApp.parseArgs(new String[] {
+            "--api-key", "api-key", "--tweet-archive", "tweets.zip", "--batch-size", "sixty"
+        }));
+        assertThrows(IllegalArgumentException.class, () -> TweetAuditApp.parseArgs(new String[] {
+            "--api-key", "api-key", "--tweet-archive", "tweets.zip", "--batch-size", "10", "--batch-size", "20"
+        }));
     }
 
     @Test
