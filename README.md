@@ -141,9 +141,3 @@ Here are the steps to filter the results of the csv in `Microsoft Excel`.
 - If you do not find that option, go to the `Data` tab, and click on `Filter`.
 - A dropdown appears on the csv heading
 - On the `decision` cell, click either `KEEP`, or `DELETE`, based on your choice.
-
-## Roadmap
-
-These are other features I plan to implement:
-
-- Add CI/CD
