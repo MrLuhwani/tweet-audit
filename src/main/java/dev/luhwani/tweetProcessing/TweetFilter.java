@@ -20,9 +20,7 @@ public final class TweetFilter {
      * @return an immutable list containing only unfinished batches
      */
     public static List<TweetBatch> filter(List<TweetBatch> tweetBatches, Checkpoint checkpoint) {
-        return tweetBatches.stream()
-                .filter(batch -> !checkpoint.successfulBatches().contains(batch.batchNumber()))
-                .toList();
+        return TweetBatchFilter.filter(tweetBatches, checkpoint);
     }
 
 }

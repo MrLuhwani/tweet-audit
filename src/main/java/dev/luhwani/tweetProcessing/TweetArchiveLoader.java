@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.BlockingQueue;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -23,6 +24,11 @@ import dev.luhwani.model.TweetData;
  * Parses X's JavaScript tweet archive and returns tweets.
  */
 public final class TweetArchiveLoader {
+
+    @FunctionalInterface
+    private interface TweetConsumer {
+        void accept(TweetData tweet) throws InterruptedException;
+    }
 
     private final ObjectMapper objectMapper;
     private final Path archivePath;
@@ -73,6 +79,43 @@ public final class TweetArchiveLoader {
         }
     }
 
+    /** Streams valid tweets into the bounded archive buffer. */
+    public void streamTo(BlockingQueue<TweetData> queue, TweetArchiveBuffer buffer) throws FatalException {
+        if (queue == null || buffer == null) {
+            throw new IllegalArgumentException("Queue and buffer must not be null");
+        }
+        Path extractedDirectory = null;
+        try {
+            if (!Files.isRegularFile(archivePath) || !Files.isReadable(archivePath)) {
+                throw new FatalException("Tweet archive zip does not exist or is not readable: " + archivePath);
+            }
+            Path tweetsPath = archivePath;
+            if (archivePath.toString().toLowerCase().endsWith(".zip")) {
+                extractedDirectory = extractTweetsFile();
+                tweetsPath = extractedDirectory.resolve("data").resolve("tweets.js");
+            }
+            loadTweets(tweetsPath, tweet -> {
+                queue.put(tweet);
+                if (queue.remainingCapacity() == 0) {
+                    buffer.signalReady();
+                }
+            });
+        } catch (FatalException e) {
+            buffer.finish(e);
+            throw e;
+        } catch (RuntimeException e) {
+            buffer.finish(e);
+            throw e;
+        } finally {
+            if (extractedDirectory != null) {
+                deleteDirectory(extractedDirectory);
+            }
+            if (!buffer.finished) {
+                buffer.finish(null);
+            }
+        }
+    }
+
     private Path extractTweetsFile() throws FatalException {
         Path extractedDirectory = null;
         try {
@@ -111,6 +154,12 @@ public final class TweetArchiveLoader {
     }
 
     private List<TweetData> loadTweets(Path tweetsPath) throws FatalException {
+        List<TweetData> tweets = new ArrayList<>();
+        loadTweets(tweetsPath, tweets::add);
+        return tweets;
+    }
+
+    private void loadTweets(Path tweetsPath, TweetConsumer consumer) throws FatalException {
         if (!Files.isRegularFile(tweetsPath) || !Files.isReadable(tweetsPath)) {
             throw new FatalException("Tweet archive entry not found or is not readable: data/tweets.js");
         }
@@ -144,7 +193,6 @@ public final class TweetArchiveLoader {
             }
 
             int tweetCount = 0;
-            List<TweetData> tweets = new ArrayList<>();
             while ((token = parser.nextToken()) != JsonToken.END_ARRAY) {
                 if (token == null) {
                     throw new FatalException("Unexpected end of tweet archive");
@@ -178,10 +226,14 @@ public final class TweetArchiveLoader {
                     tweetCount++;
                     continue;
                 }
-                tweets.add(new TweetData(id, text));
+                try {
+                    consumer.accept(new TweetData(id, text));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new FatalException("Tweet archive loading was interrupted", e);
+                }
                 tweetCount++;
             }
-            return tweets;
         } catch (IOException e) {
             throw new FatalException("Failed to read tweet archive: " + tweetsPath, e);
         }

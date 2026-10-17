@@ -115,6 +115,16 @@ java -jar target/tweet-audit-1.0-SNAPSHOT.jar --api-key your-api-key --tweet-arc
 
 See [TRADEOFFS.md](TRADEOFFS.md) for detailed architectural decisions and design rationale.
 
+## Filtering Results
+
+Here are the steps to filter the results of the csv in `Microsoft Excel`.
+
+- Open the csv in Excel
+- In the `Home` tab, at the extreme right, you will see a `Sort and Filter` option.
+- If you do not find that option, go to the `Data` tab, and click on `Filter`.
+- A dropdown appears on the csv heading
+- On the `decision` cell, click either `KEEP`, or `DELETE`, based on your choice.
+
 ### Other Implementation Notes
 
 - Tweets are processed in batches of 60 tweets by default. Use the optional `--batch-size` argument to choose a positive integer batch size.
@@ -131,13 +141,3 @@ See [TRADEOFFS.md](TRADEOFFS.md) for detailed architectural decisions and design
 ```
 
 - When the tool is reloaded, it checks the checkpoint file, and filters out successful batches
-
-## Filtering Results
-
-Here are the steps to filter the results of the csv in `Microsoft Excel`.
-
-- Open the csv in Excel
-- In the `Home` tab, at the extreme right, you will see a `Sort and Filter` option.
-- If you do not find that option, go to the `Data` tab, and click on `Filter`.
-- A dropdown appears on the csv heading
-- On the `decision` cell, click either `KEEP`, or `DELETE`, based on your choice.

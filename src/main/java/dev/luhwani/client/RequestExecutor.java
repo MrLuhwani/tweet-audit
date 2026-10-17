@@ -10,6 +10,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 import dev.luhwani.ai.AiProvider;
@@ -18,6 +19,7 @@ import dev.luhwani.error.FatalException;
 import dev.luhwani.error.RetryableException;
 import dev.luhwani.model.AnalysisResult;
 import dev.luhwani.model.TweetBatch;
+import dev.luhwani.tweetProcessing.TweetBatchQueue;
 
 /** Evaluates queued tweet batches concurrently and publishes successful results. */
 public final class RequestExecutor implements AutoCloseable {
@@ -28,6 +30,7 @@ public final class RequestExecutor implements AutoCloseable {
     private final CountDownLatch countDown;
     private final AiProvider provider;
     private final int workerThreads;
+    private final TweetBatchQueue batchQueueState;
 
     private final BlockingQueue<TweetBatch> tweetBatches;
     private final BlockingQueue<AnalysisResult> resultQueue;
@@ -40,6 +43,7 @@ public final class RequestExecutor implements AutoCloseable {
 
     private volatile Exception lastBatchException;
     private volatile int consecutiveBatchExceptions;
+    private volatile boolean finished;
 
     /**
      * Creates an executor for the supplied batch and result queues.
@@ -63,6 +67,19 @@ public final class RequestExecutor implements AutoCloseable {
         this.provider = provider;
         this.tweetBatches = tweetBatches;
         this.resultQueue = resultQueue;
+        this.batchQueueState = null;
+    }
+
+    /** Creates workers for a batch queue populated by a concurrent batch filter. */
+    public RequestExecutor(int workerThreads, TweetBatchQueue batchQueueState,
+            BlockingQueue<AnalysisResult> resultQueue, AiProvider provider) {
+        this.workerThreads = workerThreads;
+        this.executor = Executors.newFixedThreadPool(workerThreads);
+        this.countDown = null;
+        this.provider = provider;
+        this.tweetBatches = batchQueueState.batches;
+        this.batchQueueState = batchQueueState;
+        this.resultQueue = resultQueue;
     }
 
     /** Starts workers that drain the batch queue. */
@@ -75,7 +92,19 @@ public final class RequestExecutor implements AutoCloseable {
         for (int i = 0; i < workerThreads; i++) {
             Future<?> task = executor.submit(() -> {
                 TweetBatch batch;
-                while ((batch = tweetBatches.poll()) != null) {
+                while (true) {
+                    try {
+                        batch = tweetBatches.poll(200, TimeUnit.MILLISECONDS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException("Request worker interrupted", e);
+                    }
+                    if (batch == null) {
+                        if (batchQueueState == null || (batchQueueState.finished && tweetBatches.isEmpty())) {
+                            break;
+                        }
+                        continue;
+                    }
                     try {
                         AnalysisResult result = evaluateTweets(batch);
                         resultQueue.add(result);
@@ -113,15 +142,39 @@ public final class RequestExecutor implements AutoCloseable {
                         continue;
                     } catch (Exception e) {
                         LOGGER.severe("Fatal error occured in request executor: " + e.getMessage());
+                        if (batchQueueState != null) {
+                            batchQueueState.failure = e;
+                        }
                         throw new IllegalStateException("Fatal error occured in request executor", e);
                     } finally {
-                        countDown.countDown();
+                        if (countDown != null) {
+                            countDown.countDown();
+                        }
                     }
 
                 }
             });
             tasks.add(task);
         }
+        // What is the function of awaitCompletion
+        // if the same logic is repeated here?
+        executor.submit(() -> {
+            for (Future<?> task : tasks) {
+                try {
+                    task.get();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                } catch (ExecutionException e) {
+                    // awaitCompletion reports the worker failure; all workers must finish first.
+                }
+            }
+            finished = true;
+        });
+    }
+
+    public boolean isFinished() {
+        return finished;
     }
 
     private boolean isSameBatchFailure(Exception previous, Exception current) {
@@ -147,6 +200,9 @@ public final class RequestExecutor implements AutoCloseable {
             } catch (ExecutionException e) {
                 throw new FatalException(e);
             }
+        }
+        if (batchQueueState != null && batchQueueState.failure != null) {
+            throw new FatalException("Batch queue producer failed", batchQueueState.failure);
         }
     }
 

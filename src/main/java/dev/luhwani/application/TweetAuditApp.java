@@ -7,6 +7,9 @@ import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.logging.Logger;
 
@@ -22,12 +25,12 @@ import dev.luhwani.model.AnalysisResult;
 import dev.luhwani.model.Checkpoint;
 import dev.luhwani.model.Criteria;
 import dev.luhwani.model.TweetBatch;
-import dev.luhwani.model.TweetData;
 import dev.luhwani.output.OutputWriter;
 import dev.luhwani.tweetProcessing.CheckpointResolver;
 import dev.luhwani.tweetProcessing.TweetArchiveLoader;
-import dev.luhwani.tweetProcessing.TweetBatchFactory;
-import dev.luhwani.tweetProcessing.TweetFilter;
+import dev.luhwani.tweetProcessing.TweetArchiveBuffer;
+import dev.luhwani.tweetProcessing.TweetBatchFilter;
+import dev.luhwani.tweetProcessing.TweetBatchQueue;
 
 /**
  * Coordinates archive loading, batch evaluation, checkpointing, and output
@@ -50,7 +53,6 @@ public final class TweetAuditApp {
 	private static final Logger LOGGER = Logger.getLogger(TweetAuditApp.class.getName());
 	private static final String DEFAULT_MODEL = "gemini-3.5-flash-lite";
 	
-	// if you ever edit batch size, edit also in the TweetBatchFactory class
 	private static final int DEFAULT_BATCH_SIZE = 60;
 
 	/**
@@ -70,10 +72,9 @@ public final class TweetAuditApp {
 			Path checkpointPath = outputDirectory.resolve("checkpoint.json");
 			Criteria criteria = loadCriteria(cliArguments.criteria());
 			AppConfig config = new AppConfig(cliArguments.apiKey(), cliArguments.model(), criteria);
-			List<TweetBatch> tweetBatches = processTweets(Path.of(cliArguments.tweetArchive()), outputPath,
-				checkpointPath, cliArguments.batchSize());
-			evaluateTweets(tweetBatches, config, outputPath, checkpointPath);
 			LOGGER.info("Tweet audit application completed successfully");
+			streamAndEvaluate(Path.of(cliArguments.tweetArchive()), config, outputPath, checkpointPath,
+				cliArguments.batchSize());
 		} catch (Exception e) {
 			LOGGER.severe(e.getMessage());
 		}
@@ -199,15 +200,57 @@ public final class TweetAuditApp {
 	 * @return a list of tweet batches
 	 * @throws FatalException
 	 */
-	private static List<TweetBatch> processTweets(Path tweetArchivePath, Path outputPath, Path checkpointPath,
-			int batchSize)
-			throws FatalException {
-		List<TweetData> tweets = new TweetArchiveLoader(OBJECT_MAPPER, tweetArchivePath).load();
-		LOGGER.info("Parsed " + tweets.size() + " tweets\n");
-		List<TweetBatch> tweetBatches = TweetBatchFactory.createBatches(tweets, batchSize);
+	private static void streamAndEvaluate(Path tweetArchivePath, AppConfig config, Path outputPath,
+			Path checkpointPath, int batchSize) throws Exception {
 		Checkpoint checkpoint = new CheckpointResolver(OBJECT_MAPPER, checkpointPath, outputPath).load();
-		tweetBatches = TweetFilter.filter(tweetBatches, checkpoint);
-		return tweetBatches;
+		TweetArchiveBuffer archiveBuffer = new TweetArchiveBuffer(batchSize * TweetBatchFilter.BUFFER_BATCHES);
+		TweetBatchQueue batchQueue = new TweetBatchQueue();
+		BlockingQueue<AnalysisResult> resultQueue = new LinkedBlockingQueue<>();
+		TweetArchiveLoader loader = new TweetArchiveLoader(OBJECT_MAPPER, tweetArchivePath);
+		TweetBatchFilter batchFilter = new TweetBatchFilter(archiveBuffer, batchQueue, checkpoint, batchSize);
+		AiProvider provider = new GeminiAiProvider(config.apiKey, config.model, config.criteria, OBJECT_MAPPER);
+		ExecutorService pipeline = Executors.newFixedThreadPool(2);
+		try (RequestExecutor requestExecutor = new RequestExecutor(3, batchQueue, resultQueue, provider);
+				OutputWriter outputWriter = new OutputWriter(OBJECT_MAPPER, resultQueue, requestExecutor::isFinished,
+						checkpoint, outputPath.getParent())) {
+			requestExecutor.start();
+			outputWriter.start();
+			var loaderTask = pipeline.submit(() -> {
+				try {
+					loader.streamTo(archiveBuffer.tweets, archiveBuffer);
+				} catch (FatalException e) {
+					throw new RuntimeException(e);
+				}
+			});
+			var filterTask = pipeline.submit(() -> {
+				try {
+					batchFilter.run();
+				} catch (FatalException e) {
+					throw new RuntimeException(e);
+				}
+			});
+			await(loaderTask);
+			await(filterTask);
+			requestExecutor.awaitCompletion();
+			outputWriter.awaitCompletion();
+		} finally {
+			pipeline.shutdownNow();
+		}
+	}
+
+	private static void await(java.util.concurrent.Future<?> task) throws Exception {
+		try {
+			task.get();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new FatalException("Tweet pipeline was interrupted", e);
+		} catch (ExecutionException e) {
+			Throwable cause = e.getCause();
+			if (cause instanceof Exception exception) {
+				throw exception;
+			}
+			throw new FatalException("Tweet pipeline failed", cause);
+		}
 	}
 
 	/**
@@ -237,7 +280,6 @@ public final class TweetAuditApp {
 			return;
 		}
 		LOGGER.info("Evaluating " + tweetBatches.size() + " tweet batches");
-		LOGGER.info("Resuming from batch " + tweetBatches.get(0).batchNumber() + "/" + tweetBatches.getLast().batchNumber());
 		BlockingQueue<TweetBatch> batchQueue = new ArrayBlockingQueue<>(tweetBatches.size());
 		for (TweetBatch batch : tweetBatches) {
 			batchQueue.put(batch);
@@ -264,6 +306,7 @@ public final class TweetAuditApp {
 			return;
 		}
 		LOGGER.info("Evaluating " + tweetBatches.size() + " tweet batches");
+		LOGGER.info("Resuming from batch " + tweetBatches.get(0).batchNumber() + "/" + tweetBatches.getLast().batchNumber());
 		BlockingQueue<TweetBatch> batchQueue = new ArrayBlockingQueue<>(tweetBatches.size());
 		for (TweetBatch batch : tweetBatches) {
 			batchQueue.put(batch);

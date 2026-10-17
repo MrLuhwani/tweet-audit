@@ -9,6 +9,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -27,6 +28,7 @@ public final class OutputWriter implements AutoCloseable {
 
     private final BlockingQueue<AnalysisResult> resultQueue;
     private final CountDownLatch countDown;
+    private final BooleanSupplier completion;
 
     private Future<?> task;
 
@@ -50,6 +52,7 @@ public final class OutputWriter implements AutoCloseable {
         this.checkpointWriter = new CheckpointWriter(objectMapper, outputDirectory.resolve("checkpoint.json"));
         this.resultQueue = resultQueue;
         this.countDown = countDown;
+        this.completion = () -> countDown.getCount() == 0;
         this.checkpoint = checkpoint;
     }
 
@@ -59,6 +62,20 @@ public final class OutputWriter implements AutoCloseable {
         this.checkpointWriter = new CheckpointWriter(objectMapper, checkpointPath);
         this.resultQueue = resultQueue;
         this.countDown = countDown;
+        this.completion = () -> countDown.getCount() == 0;
+        this.checkpoint = checkpoint;
+    }
+
+    public OutputWriter(ObjectMapper objectMapper, BlockingQueue<AnalysisResult> resultQueue,
+            BooleanSupplier completion, Checkpoint checkpoint, Path outputDirectory) throws IOException {
+        if (outputDirectory == null || completion == null) {
+            throw new IllegalArgumentException("Output directory and completion signal are required");
+        }
+        this.csvWriter = new CSVWriter(outputDirectory.resolve("output.csv"));
+        this.checkpointWriter = new CheckpointWriter(objectMapper, outputDirectory.resolve("checkpoint.json"));
+        this.resultQueue = resultQueue;
+        this.countDown = null;
+        this.completion = completion;
         this.checkpoint = checkpoint;
     }
 
@@ -96,7 +113,7 @@ public final class OutputWriter implements AutoCloseable {
         while (true) {
             AnalysisResult result = resultQueue.poll(200, TimeUnit.MILLISECONDS);
             if (result == null) {
-                if (countDown.getCount() == 0) {
+                if (completion.getAsBoolean() && resultQueue.isEmpty()) {
                     break;
                 }
                 continue;
