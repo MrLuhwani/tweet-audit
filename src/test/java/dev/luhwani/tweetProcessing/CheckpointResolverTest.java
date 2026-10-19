@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -108,28 +107,4 @@ class CheckpointResolverTest {
         assertThrows(FatalException.class, () -> resolver.load(checkpointPath, outputPath));
     }
 
-    @Test
-    void readsCheckpointFromFile() throws Exception {
-        Path checkpointPath = Files.writeString(tempDir.resolve("checkpoint.json"), """
-                {
-                  "successfulBatches": [2, 4]
-                }
-                """, StandardCharsets.UTF_8);
-
-        Checkpoint checkpoint = resolver.fromFile(checkpointPath);
-
-        assertEquals(Set.of(2, 4), checkpoint.successfulBatches());
-    }
-
-    @Test
-    void rejectsNullCheckpointPathWhenReadingFromFile() {
-        assertThrows(IllegalArgumentException.class, () -> resolver.fromFile(null));
-    }
-
-    @Test
-    void propagatesMalformedCheckpointWhenReadingFromFile() throws Exception {
-        Path checkpointPath = Files.writeString(tempDir.resolve("checkpoint.json"), "not json");
-
-        assertThrows(IOException.class, () -> resolver.fromFile(checkpointPath));
-    }
 }

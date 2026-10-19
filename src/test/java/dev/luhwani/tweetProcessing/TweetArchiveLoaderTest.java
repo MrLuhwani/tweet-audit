@@ -2,8 +2,9 @@ package dev.luhwani.tweetProcessing;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -23,122 +24,79 @@ class TweetArchiveLoaderTest {
     @TempDir
     Path tempDir;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
     @Test
-    void loadsTweetsFromJavaScriptArchive() throws Exception {
-        Path archive = copyFixtureToTempDir();
+    void loadsTweetsAndSkipsInvalidRecords() throws Exception {
+        Path archive = writeArchive("window.YTD.tweets.part0 = " + """
+                [
+                  {"tweet":{"id":"1","full_text":"first"}},
+                  {"tweet":{"id_str":"2","full_text":"second"}},
+                  {"tweet":{"id":"3"}},
+                  {"tweet":{"full_text":"missing id"}},
+                  {"unexpected":true}
+                ]
+                """);
+        TweetArchiveBuffer buffer = new TweetArchiveBuffer(10);
 
-        List<TweetData> tweets = new TweetArchiveLoader(objectMapper, archive).load();
+        new TweetArchiveLoader(new ObjectMapper(), archive).streamTo(buffer);
 
-        assertEquals(4, tweets.size());
+        assertEquals(List.of(new TweetData("1", "first"), new TweetData("2", "second")),
+                List.copyOf(buffer.tweets));
+        assertTrue(buffer.finished);
+        assertEquals(null, buffer.failure);
     }
 
     @Test
-    void loadsTweetsFromZipArchiveDataPath() throws Exception {
+    void rejectsArchiveWithoutTweetEntry() throws Exception {
         Path archive = tempDir.resolve("tweets.zip");
-        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
-            zip.putNextEntry(new ZipEntry("data/tweets.js"));
-            zip.write("window.YTD.tweets.part0 = [{\"tweet\": {\"id\": \"1\", \"full_text\": \"Zipped tweet\"}}];"
-                    .getBytes());
-            zip.closeEntry();
-        }
-
-        List<TweetData> tweets = new TweetArchiveLoader(objectMapper, archive).load();
-
-        assertEquals(1, tweets.size());
-        assertTweet(tweets.get(0), "1", "Zipped tweet");
-    }
-
-    @Test
-    void throwsWhenZipDoesNotContainTweetsFile() throws Exception {
-        Path archive = tempDir.resolve("tweets.zip");
-        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+        try (OutputStream output = Files.newOutputStream(archive);
+                ZipOutputStream zip = new ZipOutputStream(output)) {
             zip.putNextEntry(new ZipEntry("data/other.js"));
             zip.write("[]".getBytes());
             zip.closeEntry();
         }
+        TweetArchiveBuffer buffer = new TweetArchiveBuffer(2);
 
         assertThrows(FatalException.class,
-                () -> new TweetArchiveLoader(objectMapper, archive).load());
+                () -> new TweetArchiveLoader(new ObjectMapper(), archive).streamTo(buffer));
+        assertTrue(buffer.finished);
+        assertTrue(buffer.failure instanceof FatalException);
     }
 
     @Test
-    void usesIdStrWhenIdIsMissing() throws Exception {
-        Path archive = writeArchive("""
-                window.YTD.tweets.part0 = [
-                  {"tweet": {"id_str": "  300  ", "full_text": "  Third tweet  "}},
-                  {"tweet": {"id": "500", "full_text": "Valid tweet"}}
-                ];
-                """);
-
-        List<TweetData> tweets = new TweetArchiveLoader(objectMapper, archive).load();
-
-        assertEquals(2, tweets.size());
-        assertTweet(tweets.get(0), "300", "Third tweet");
-        assertTweet(tweets.get(1), "500", "Valid tweet");
-    }
-
-    @Test
-    void skipsInvalidTweets() throws Exception {
-        Path archive = writeArchive("""
-                window.YTD.tweets.part0 = [
-                  {"tweet": {"id": "   ", "full_text": "No id"}},
-                  {"tweet": {"id": "400", "full_text": "   "}},
-                  {"tweet": {"id": "500", "full_text": "Valid tweet"}},
-                  {"other": {"id": "600", "full_text": "Not a tweet"}}
-                ];
-                """);
-
-        List<TweetData> tweets = new TweetArchiveLoader(objectMapper, archive).load();
-
-        assertEquals(1, tweets.size());
-        assertTweet(tweets.get(0), "500", "Valid tweet");
-    }
-
-    @Test
-    void throwsWhenArchiveDoesNotExist() {
-        Path archive = tempDir.resolve("missing-tweets.js");
+    void rejectsArchiveWithoutTweetArray() throws Exception {
+        Path archive = writeArchive("window.YTD.tweets.part0 = {} ");
+        TweetArchiveBuffer buffer = new TweetArchiveBuffer(2);
 
         assertThrows(FatalException.class,
-                () -> new TweetArchiveLoader(objectMapper, archive).load());
+                () -> new TweetArchiveLoader(new ObjectMapper(), archive).streamTo(buffer));
+        assertTrue(buffer.failure instanceof FatalException);
     }
 
     @Test
-    void throwsWhenTweetsArrayIsMissing() throws Exception {
-        Path archive = writeArchive("window.YTD.tweets.part0 = {};");
+    void rejectsNonZipAndMissingArchives() {
+        Path textFile = tempDir.resolve("tweets.txt");
+        try {
+            Files.writeString(textFile, "tweets");
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
 
+        TweetArchiveBuffer buffer = new TweetArchiveBuffer(2);
         assertThrows(FatalException.class,
-                () -> new TweetArchiveLoader(objectMapper, archive).load());
-    }
-
-    @Test
-    void throwsWhenArchiveContainsMalformedJson() throws Exception {
-        Path archive = writeArchive("window.YTD.tweets.part0 = [{\"tweet\": {");
-
+                () -> new TweetArchiveLoader(new ObjectMapper(), textFile).streamTo(buffer));
         assertThrows(FatalException.class,
-                () -> new TweetArchiveLoader(objectMapper, archive).load());
+                () -> new TweetArchiveLoader(new ObjectMapper(), tempDir.resolve("missing.zip"))
+                        .streamTo(new TweetArchiveBuffer(2)));
     }
 
-    @Test
-    void rejectsNullDependencies() {
-        assertThrows(IllegalArgumentException.class,
-                () -> new TweetArchiveLoader(null, tempDir.resolve("tweets.js")));
-        assertThrows(IllegalArgumentException.class,
-                () -> new TweetArchiveLoader(objectMapper, null));
-    }
-
-    private Path copyFixtureToTempDir() throws IOException {
-        Path fixture = Path.of("src", "test", "resources", "tweets.js");
-        return Files.copy(fixture, tempDir.resolve("tweets.js"));
-    }
-
-    private Path writeArchive(String contents) throws IOException {
-        return Files.writeString(tempDir.resolve("tweets.js"), contents);
-    }
-
-    private void assertTweet(TweetData tweet, String expectedId, String expectedText) {
-        assertEquals(expectedId, tweet.id());
-        assertEquals(expectedText, tweet.text());
+    private Path writeArchive(String content) throws Exception {
+        Path archive = tempDir.resolve("tweets.zip");
+        try (OutputStream output = Files.newOutputStream(archive);
+                ZipOutputStream zip = new ZipOutputStream(output)) {
+            zip.putNextEntry(new ZipEntry("data/tweets.js"));
+            zip.write(content.getBytes());
+            zip.closeEntry();
+        }
+        return archive;
     }
 }

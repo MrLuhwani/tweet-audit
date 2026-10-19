@@ -3,10 +3,7 @@ package dev.luhwani.application;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -24,7 +21,6 @@ import dev.luhwani.error.FatalException;
 import dev.luhwani.model.AnalysisResult;
 import dev.luhwani.model.Checkpoint;
 import dev.luhwani.model.Criteria;
-import dev.luhwani.model.TweetBatch;
 import dev.luhwani.output.OutputWriter;
 import dev.luhwani.tweetProcessing.CheckpointResolver;
 import dev.luhwani.tweetProcessing.TweetArchiveLoader;
@@ -41,18 +37,16 @@ public final class TweetAuditApp {
 	private TweetAuditApp() {
 	}
 
-	/** Holds the configuration shared by the evaluation components. */
-	private record AppConfig(String apiKey, String model, Criteria criteria) {
-	}
-
-	record CliArguments(String apiKey, String model, String tweetArchive, String criteria, String output, int batchSize) {
+	/** Holds the configuration used by the evaluation components. */
+	record CliArguments(String apiKey, String tweetArchive, String model, String criteria, String output,
+			int batchSize) {
 	}
 
 	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
 			.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 	private static final Logger LOGGER = Logger.getLogger(TweetAuditApp.class.getName());
 	private static final String DEFAULT_MODEL = "gemini-3.5-flash-lite";
-	
+
 	private static final int DEFAULT_BATCH_SIZE = 60;
 
 	/**
@@ -67,35 +61,31 @@ public final class TweetAuditApp {
 			System.out.println("----------Tweet Audit App----------");
 			LOGGER.info("Started tweet audit application");
 			CliArguments cliArguments = parseArgs(args);
-			Path outputDirectory = resolveOutputDirectory(cliArguments.output());
+			Path outputDirectory = resolveOutputDirectory(cliArguments.output);
 			Path outputPath = outputDirectory.resolve("output.csv");
 			Path checkpointPath = outputDirectory.resolve("checkpoint.json");
 			Criteria criteria = loadCriteria(cliArguments.criteria());
-			AppConfig config = new AppConfig(cliArguments.apiKey(), cliArguments.model(), criteria);
+			streamAndEvaluate(cliArguments, outputPath, checkpointPath, criteria);
 			LOGGER.info("Tweet audit application completed successfully");
-			streamAndEvaluate(Path.of(cliArguments.tweetArchive()), config, outputPath, checkpointPath,
-				cliArguments.batchSize());
 		} catch (Exception e) {
 			LOGGER.severe(e.getMessage());
 		}
 	}
 
 	/**
-	 * Valiates the number of command line arguments passed when running the
-	 * tool
+	 * Validates the CLI arguments used to run the tool
+	 * 
+	 * @param args
+	 * @return cliArgs
 	 */
-	static void validArgs(String[] args) {
-		parseArgs(args);
-	}
-
 	static CliArguments parseArgs(String[] args) {
 		if (args == null) {
 			throw new IllegalArgumentException("Null args array passed into audit arguments");
 		}
 
 		String apiKey = null;
-		String model = null;
 		String tweetArchive = null;
+		String model = null;
 		String criteria = null;
 		String output = null;
 		String batchSize = null;
@@ -110,20 +100,39 @@ public final class TweetAuditApp {
 			String value = args[++index];
 			switch (option) {
 
-			case "--api-key" -> apiKey = requireUnset(option, apiKey, value);
-			case "--model" -> model = requireUnset(option, model, value);
-			case "--tweet-archive" -> tweetArchive = requireUnset(option, tweetArchive, value);
-			case "--criteria" -> criteria = requireUnset(option, criteria, value);
-			case "--output" -> output = requireUnset(option, output, value);
-			case "--batch-size" -> batchSize = requireUnset(option, batchSize, value);
-			default -> throw new IllegalArgumentException("Unknown option: " + option + "\n" + usageMessage());
+				case "--api-key" -> apiKey = requireUnset(option, apiKey, value);
+				case "--tweet-archive" -> tweetArchive = requireUnset(option, tweetArchive, value);
+				case "--model" -> model = requireUnset(option, model, value);
+				case "--criteria" -> criteria = requireUnset(option, criteria, value);
+				case "--output" -> output = requireUnset(option, output, value);
+				case "--batch-size" -> batchSize = requireUnset(option, batchSize, value);
+				default -> throw new IllegalArgumentException("Unknown option: " + option + "\n" + usageMessage());
 			}
 		}
 		if (apiKey == null || tweetArchive == null) {
 			throw usageError();
 		}
-		return new CliArguments(apiKey, model == null ? DEFAULT_MODEL : model, tweetArchive, criteria, output,
+		return new CliArguments(apiKey, tweetArchive, model == null ? DEFAULT_MODEL : model, criteria, output,
 				batchSize == null ? DEFAULT_BATCH_SIZE : parseBatchSize(batchSize));
+	}
+
+	private static IllegalArgumentException usageError() {
+		return new IllegalArgumentException(usageMessage());
+	}
+
+	private static String usageMessage() {
+		return "Usage: java -jar tweet-audit-1.0-SNAPSHOT.jar --api-key <key> --tweet-archive <path> "
+				+ "[--model <model>] [--criteria <path>] [--output <directory>] [--batch-size <positive integer>]";
+	}
+
+	private static String requireUnset(String option, String currentValue, String value) {
+		if (currentValue != null) {
+			throw new IllegalArgumentException("Option specified more than once: " + option);
+		}
+		if (value.isBlank()) {
+			throw new IllegalArgumentException("Value for option cannot be blank: " + option);
+		}
+		return value;
 	}
 
 	private static int parseBatchSize(String value) {
@@ -138,27 +147,9 @@ public final class TweetAuditApp {
 		}
 	}
 
-	private static String requireUnset(String option, String currentValue, String value) {
-		if (currentValue != null) {
-			throw new IllegalArgumentException("Option specified more than once: " + option);
-		}
-		if (value.isBlank()) {
-			throw new IllegalArgumentException("Value for option cannot be blank: " + option);
-		}
-		return value;
-	}
-
-	private static IllegalArgumentException usageError() {
-		return new IllegalArgumentException(usageMessage());
-	}
-
-	private static String usageMessage() {
-		return "Usage: java -jar tweet-audit-1.0-SNAPSHOT.jar --api-key <key> --tweet-archive <path> "
-				+ "[--model <model>] [--criteria <path>] [--output <directory>] [--batch-size <positive integer>]";
-	}
-
 	/**
-	 * Resolves and validates the directory used for CSV output and checkpoint state.
+	 * Resolves and validates the directory used for CSV output and checkpoint
+	 * state.
 	 *
 	 * @param configuredOutputDirectory optional user-supplied output directory
 	 * @return the normalized output directory
@@ -194,34 +185,41 @@ public final class TweetAuditApp {
 	}
 
 	/**
-	 * Loads tweets from the archive and creates the next set of
-	 * unprocessed batches
+	 * Runs the bounded archive, filtering, request, and output pipeline.
 	 *
-	 * @return a list of tweet batches
-	 * @throws FatalException
+	 * @throws Exception if a pipeline stage cannot complete successfully
 	 */
-	private static void streamAndEvaluate(Path tweetArchivePath, AppConfig config, Path outputPath,
-			Path checkpointPath, int batchSize) throws Exception {
+	private static void streamAndEvaluate(CliArguments args, Path outputPath,
+			Path checkpointPath, Criteria criteria) throws Exception {
+		
 		Checkpoint checkpoint = new CheckpointResolver(OBJECT_MAPPER, checkpointPath, outputPath).load();
-		TweetArchiveBuffer archiveBuffer = new TweetArchiveBuffer(batchSize * TweetBatchFilter.BUFFER_BATCHES);
+		
+		TweetArchiveBuffer archiveBuffer = new TweetArchiveBuffer(args.batchSize * TweetBatchFilter.BUFFER_BATCHES);
+		TweetArchiveLoader loader = new TweetArchiveLoader(OBJECT_MAPPER, Path.of(args.tweetArchive));
+		
 		TweetBatchQueue batchQueue = new TweetBatchQueue();
+		TweetBatchFilter batchFilter = new TweetBatchFilter(archiveBuffer, batchQueue, checkpoint, args.batchSize);
+		
 		BlockingQueue<AnalysisResult> resultQueue = new LinkedBlockingQueue<>();
-		TweetArchiveLoader loader = new TweetArchiveLoader(OBJECT_MAPPER, tweetArchivePath);
-		TweetBatchFilter batchFilter = new TweetBatchFilter(archiveBuffer, batchQueue, checkpoint, batchSize);
-		AiProvider provider = new GeminiAiProvider(config.apiKey, config.model, config.criteria, OBJECT_MAPPER);
+		
+		AiProvider provider = new GeminiAiProvider(args.apiKey, args.model, criteria, OBJECT_MAPPER);
 		ExecutorService pipeline = Executors.newFixedThreadPool(2);
+		
 		try (RequestExecutor requestExecutor = new RequestExecutor(3, batchQueue, resultQueue, provider);
 				OutputWriter outputWriter = new OutputWriter(OBJECT_MAPPER, resultQueue, requestExecutor::isFinished,
 						checkpoint, outputPath.getParent())) {
+			
 			requestExecutor.start();
 			outputWriter.start();
+			
 			var loaderTask = pipeline.submit(() -> {
 				try {
-					loader.streamTo(archiveBuffer.tweets, archiveBuffer);
+					loader.streamTo(archiveBuffer);
 				} catch (FatalException e) {
 					throw new RuntimeException(e);
 				}
 			});
+
 			var filterTask = pipeline.submit(() -> {
 				try {
 					batchFilter.run();
@@ -251,81 +249,6 @@ public final class TweetAuditApp {
 			}
 			throw new FatalException("Tweet pipeline failed", cause);
 		}
-	}
-
-	/**
-	 * Runs the provider and result writer.
-	 *
-	 * @param tweetBatches
-	 * @param config
-	 * @param isRetrying   to identify if we are trying to evaluate a
-	 *                     previously failed batch or not
-	 * @see AiProvider
-	 * @see RequestExecutor
-	 * @see OutputWriter
-	 * @throws Exception if any fatal error happens internally during evaluation
-	 */
-	private static void evaluateTweets(List<TweetBatch> tweetBatches, AppConfig config, Path outputPath,
-			Path checkpointPath)
-			throws Exception {
-		AiProvider provider = new GeminiAiProvider(config.apiKey, config.model, config.criteria, OBJECT_MAPPER);
-		Checkpoint checkpoint = new CheckpointResolver(OBJECT_MAPPER, checkpointPath, outputPath).fromFile();
-		evaluateTweets(tweetBatches, provider, checkpoint, outputPath, checkpointPath);
-	}
-
-	private static void evaluateTweets(List<TweetBatch> tweetBatches, AiProvider provider, Checkpoint checkpoint,
-			Path outputPath, Path checkpointPath) throws Exception {
-		if (tweetBatches.isEmpty()) {
-			LOGGER.info("Tweet Processing completed on previous run");
-			return;
-		}
-		LOGGER.info("Evaluating " + tweetBatches.size() + " tweet batches");
-		BlockingQueue<TweetBatch> batchQueue = new ArrayBlockingQueue<>(tweetBatches.size());
-		for (TweetBatch batch : tweetBatches) {
-			batchQueue.put(batch);
-		}
-		BlockingQueue<AnalysisResult> resultQueue = new LinkedBlockingQueue<>();
-		CountDownLatch countDown = new CountDownLatch(batchQueue.size());
-		int workers = 3;
-		try (RequestExecutor requestExecutor = new RequestExecutor(workers, batchQueue, resultQueue, countDown,
-				provider);
-			OutputWriter outputWriter = new OutputWriter(OBJECT_MAPPER, resultQueue, countDown, checkpoint, outputPath,
-					checkpointPath)) {
-			requestExecutor.start();
-			outputWriter.start();
-			requestExecutor.awaitCompletion();
-			outputWriter.awaitCompletion();
-		}
-	}
-
-	static void evaluateTweets(List<TweetBatch> tweetBatches, AiProvider provider, Checkpoint checkpoint,
-			Path outputDirectory)
-			throws Exception {
-		if (tweetBatches.isEmpty()) {
-			LOGGER.info("Tweet Processing completed on previous run");
-			return;
-		}
-		LOGGER.info("Evaluating " + tweetBatches.size() + " tweet batches");
-		LOGGER.info("Resuming from batch " + tweetBatches.get(0).batchNumber() + "/" + tweetBatches.getLast().batchNumber());
-		BlockingQueue<TweetBatch> batchQueue = new ArrayBlockingQueue<>(tweetBatches.size());
-		for (TweetBatch batch : tweetBatches) {
-			batchQueue.put(batch);
-		}
-		BlockingQueue<AnalysisResult> resultQueue = new LinkedBlockingQueue<>();
-
-		CountDownLatch countDown = new CountDownLatch(batchQueue.size());
-		int workers = 3;
-		try (
-				RequestExecutor requestExecutor = new RequestExecutor(workers, batchQueue, resultQueue, countDown,
-						provider);
-				OutputWriter outputWriter = new OutputWriter(OBJECT_MAPPER, resultQueue, countDown, checkpoint,
-						outputDirectory)) {
-			requestExecutor.start();
-			outputWriter.start();
-			requestExecutor.awaitCompletion();
-			outputWriter.awaitCompletion();
-		}
-
 	}
 
 }

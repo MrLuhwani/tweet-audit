@@ -4,7 +4,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CountDownLatch;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -27,7 +26,6 @@ public final class RequestExecutor implements AutoCloseable {
     private static final Logger LOGGER = Logger.getLogger(RequestExecutor.class.getName());
 
     private final ExecutorService executor;
-    private final CountDownLatch countDown;
     private final AiProvider provider;
     private final int workerThreads;
     private final TweetBatchQueue batchQueueState;
@@ -43,39 +41,19 @@ public final class RequestExecutor implements AutoCloseable {
 
     private volatile Exception lastBatchException;
     private volatile int consecutiveBatchExceptions;
-    private volatile boolean finished;
-
     /**
-     * Creates an executor for the supplied batch and result queues.
+     * Creates workers for a batch queue populated by a concurrent batch filter.
      *
      * @param workerThreads number of request workers to create
-     * @param tweetBatches queue of batches to evaluate
+     * @param batchQueueState bounded queue of batches to evaluate
      * @param resultQueue receiving successful analysis results
-     * @param countDown latch decremented when each batch finishes
      * @param provider used to evaluate batches
      * @throws IllegalArgumentException if the queue size does not match the latch
      */
-    public RequestExecutor(int workerThreads, BlockingQueue<TweetBatch> tweetBatches,
-            BlockingQueue<AnalysisResult> resultQueue, CountDownLatch countDown,
-            AiProvider provider) {
-        this.workerThreads = workerThreads;
-        executor = Executors.newFixedThreadPool(workerThreads);
-        if (tweetBatches.size() != countDown.getCount()) {
-            throw new IllegalArgumentException("tweetBatches not the same as countdown latch on executor init");
-        }
-        this.countDown = countDown;
-        this.provider = provider;
-        this.tweetBatches = tweetBatches;
-        this.resultQueue = resultQueue;
-        this.batchQueueState = null;
-    }
-
-    /** Creates workers for a batch queue populated by a concurrent batch filter. */
     public RequestExecutor(int workerThreads, TweetBatchQueue batchQueueState,
             BlockingQueue<AnalysisResult> resultQueue, AiProvider provider) {
         this.workerThreads = workerThreads;
         this.executor = Executors.newFixedThreadPool(workerThreads);
-        this.countDown = null;
         this.provider = provider;
         this.tweetBatches = batchQueueState.batches;
         this.batchQueueState = batchQueueState;
@@ -94,7 +72,7 @@ public final class RequestExecutor implements AutoCloseable {
                 TweetBatch batch;
                 while (true) {
                     try {
-                        batch = tweetBatches.poll(200, TimeUnit.MILLISECONDS);
+                        batch = tweetBatches.poll(100, TimeUnit.MILLISECONDS);
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         throw new IllegalStateException("Request worker interrupted", e);
@@ -146,35 +124,20 @@ public final class RequestExecutor implements AutoCloseable {
                             batchQueueState.failure = e;
                         }
                         throw new IllegalStateException("Fatal error occured in request executor", e);
-                    } finally {
-                        if (countDown != null) {
-                            countDown.countDown();
-                        }
                     }
 
                 }
             });
             tasks.add(task);
         }
-        // What is the function of awaitCompletion
-        // if the same logic is repeated here?
-        executor.submit(() -> {
-            for (Future<?> task : tasks) {
-                try {
-                    task.get();
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
-                } catch (ExecutionException e) {
-                    // awaitCompletion reports the worker failure; all workers must finish first.
-                }
-            }
-            finished = true;
-        });
     }
 
+    /**
+     * Checks if all workerThreads have completed their tasks
+     * @return true or false, depending on the state of the workerThreads
+     */
     public boolean isFinished() {
-        return finished;
+        return tasks.stream().allMatch(Future::isDone);
     }
 
     private boolean isSameBatchFailure(Exception previous, Exception current) {
@@ -206,6 +169,16 @@ public final class RequestExecutor implements AutoCloseable {
         }
     }
 
+    /**
+     * sends a tweet batc to the Ai provider for evaluation.
+     * Retries transient failures
+     * 
+     * @param batch batch to be evaluated
+     * @return
+     * @throws BatchException if the same tweet batch has failed repeatedly
+     * @throws FatalException if a fatal error occred during execution
+     * @throws InterruptedException if this thread is interrupted for any reason
+     */
     private AnalysisResult evaluateTweets(TweetBatch batch)
             throws BatchException, FatalException, InterruptedException {
         for (int attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {

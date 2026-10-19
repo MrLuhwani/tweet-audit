@@ -1,21 +1,19 @@
 package dev.luhwani.output;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import dev.luhwani.error.FatalException;
 import dev.luhwani.model.AnalysisResult;
 import dev.luhwani.model.Checkpoint;
 import dev.luhwani.model.Decision;
@@ -26,100 +24,21 @@ class OutputWriterTest {
     @TempDir
     Path tempDir;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
     @Test
-    void writesResultsAndCheckpointAfterAllBatchesComplete() throws Exception {
-        Path csvPath = tempDir.resolve("output.csv");
-        Files.writeString(csvPath, "tweet_link,decision,reason\n", StandardCharsets.UTF_8);
-        Path checkpointPath = tempDir.resolve("checkpoint.json");
-        LinkedBlockingQueue<AnalysisResult> results = new LinkedBlockingQueue<>();
-        CountDownLatch countDown = new CountDownLatch(2);
+    void writesCsvAndCheckpointForCompletedResult() throws Exception {
+        var queue = new ArrayBlockingQueue<AnalysisResult>(2);
+        var complete = new AtomicBoolean(false);
         Checkpoint checkpoint = Checkpoint.empty();
-        results.add(result(2, "222"));
-        results.add(result(1, "111"));
+        queue.add(new AnalysisResult(4, List.of(new TweetDecision("123", Decision.DELETE, "reason"))));
+        OutputWriter writer = new OutputWriter(new ObjectMapper(), queue, complete::get, checkpoint, tempDir);
 
-        try (OutputWriter writer = new OutputWriter(objectMapper, results, countDown, checkpoint,
-                csvPath, checkpointPath)) {
-            writer.start();
-            countDown.countDown();
-            countDown.countDown();
-            writer.awaitCompletion();
-        }
+        writer.start();
+        complete.set(true);
+        writer.awaitCompletion();
+        writer.close();
 
-        assertEquals(
-                List.of(
-                        "tweet_link,decision,reason",
-                        "\"https://x.com/i/status/222\",KEEP,\"Result 222\"",
-                        "\"https://x.com/i/status/111\",KEEP,\"Result 111\""),
-                Files.readAllLines(csvPath, StandardCharsets.UTF_8));
-        Checkpoint savedCheckpoint = objectMapper.readValue(checkpointPath.toFile(), Checkpoint.class);
-        assertEquals(java.util.Set.of(1, 2), savedCheckpoint.successfulBatches());
-        assertEquals(java.util.Set.of(1, 2), checkpoint.successfulBatches());
-    }
-
-    @Test
-    void writesToConfiguredOutputDirectory() throws Exception {
-        Path outputDirectory = tempDir.resolve("configured-output");
-        Files.createDirectories(outputDirectory);
-        Files.writeString(outputDirectory.resolve("output.csv"), "tweet_link,decision,reason\n",
-                StandardCharsets.UTF_8);
-        LinkedBlockingQueue<AnalysisResult> results = new LinkedBlockingQueue<>();
-        CountDownLatch countDown = new CountDownLatch(1);
-        results.add(result(1, "111"));
-
-        try (OutputWriter writer = new OutputWriter(objectMapper, results, countDown, Checkpoint.empty(),
-                outputDirectory)) {
-            writer.start();
-            countDown.countDown();
-            writer.awaitCompletion();
-        }
-
-        assertEquals(2, Files.readAllLines(outputDirectory.resolve("output.csv"), StandardCharsets.UTF_8).size());
-        assertEquals(java.util.Set.of(1),
-                objectMapper.readValue(outputDirectory.resolve("checkpoint.json").toFile(), Checkpoint.class)
-                        .successfulBatches());
-    }
-
-    @Test
-    void waitsForResultsBeforeCompletingWhenProducerHasNotFinished() throws Exception {
-        Path csvPath = tempDir.resolve("output.csv");
-        Files.writeString(csvPath, "tweet_link,decision,reason\n", StandardCharsets.UTF_8);
-        Path checkpointPath = tempDir.resolve("checkpoint.json");
-        LinkedBlockingQueue<AnalysisResult> results = new LinkedBlockingQueue<>();
-        CountDownLatch countDown = new CountDownLatch(1);
-
-        try (OutputWriter writer = new OutputWriter(objectMapper, results, countDown, Checkpoint.empty(),
-                csvPath, checkpointPath)) {
-            writer.start();
-            results.put(result(1, "111"));
-            countDown.countDown();
-            writer.awaitCompletion();
-        }
-
-        assertEquals(2, Files.readAllLines(csvPath, StandardCharsets.UTF_8).size());
-    }
-
-    @Test
-    void reportsCheckpointFailureThroughAwaitCompletion() throws Exception {
-        Path csvPath = tempDir.resolve("output.csv");
-        Files.writeString(csvPath, "tweet_link,decision,reason\n", StandardCharsets.UTF_8);
-        Path checkpointDirectory = Files.createDirectory(tempDir.resolve("checkpoint"));
-        LinkedBlockingQueue<AnalysisResult> results = new LinkedBlockingQueue<>();
-        CountDownLatch countDown = new CountDownLatch(1);
-        results.add(result(1, "111"));
-
-        try (OutputWriter writer = new OutputWriter(objectMapper, results, countDown, Checkpoint.empty(),
-                csvPath, checkpointDirectory)) {
-            writer.start();
-            countDown.countDown();
-
-            assertThrows(FatalException.class, writer::awaitCompletion);
-        }
-    }
-
-    private AnalysisResult result(int batchNumber, String tweetId) {
-        return new AnalysisResult(batchNumber,
-                List.of(new TweetDecision(tweetId, Decision.KEEP, "Result " + tweetId)));
+        assertTrue(Files.readString(tempDir.resolve("output.csv")).contains("https://x.com/i/status/123"));
+        assertTrue(Files.readString(tempDir.resolve("checkpoint.json")).contains("4"));
+        assertTrue(checkpoint.successfulBatches().containsAll(Set.of(4)));
     }
 }

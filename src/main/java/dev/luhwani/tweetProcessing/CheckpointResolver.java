@@ -19,14 +19,13 @@ public final class CheckpointResolver {
     static final String CSV_HEADER = "tweet_link,decision,reason";
 
     private final ObjectMapper objectMapper;
-    private final Path outputDirectory;
     private final Path checkpointPath;
     private final Path outputPath;
 
     /**
      * Creates a resolver for the supplied output directory.
      *
-     * @param objectMapper mapper used to read and write checkpoints
+     * @param objectMapper    mapper used to read and write checkpoints
      * @param outputDirectory directory containing the CSV and checkpoint files
      */
     public CheckpointResolver(ObjectMapper objectMapper, Path outputDirectory) {
@@ -34,7 +33,6 @@ public final class CheckpointResolver {
         if (outputDirectory == null) {
             throw new IllegalArgumentException("Output directory cannot be null");
         }
-        this.outputDirectory = outputDirectory;
         this.checkpointPath = outputDirectory.resolve("checkpoint.json");
         this.outputPath = outputDirectory.resolve("output.csv");
     }
@@ -45,7 +43,6 @@ public final class CheckpointResolver {
         if (checkpointPath == null || outputPath == null) {
             throw new IllegalArgumentException("Checkpoint and output paths cannot be null");
         }
-        this.outputDirectory = null;
         this.checkpointPath = checkpointPath;
         this.outputPath = outputPath;
     }
@@ -55,7 +52,7 @@ public final class CheckpointResolver {
      * file exists.
      *
      * @return the current checkpoint
-     * @throws FatalException if the files cannot be created or read
+     * @throws FatalException        if the files cannot be created or read
      * @throws IllegalStateException if only one of the two files exists
      */
     public Checkpoint load() throws FatalException {
@@ -103,21 +100,4 @@ public final class CheckpointResolver {
 
     }
 
-    /**
-     * Reads the configured checkpoint without creating or validating the CSV.
-     *
-     * @return the stored checkpoint
-     * @throws IOException if the checkpoint cannot be read or deserialized
-     */
-    public Checkpoint fromFile() throws IOException {
-        return fromFile(checkpointPath);
-    }
-
-    Checkpoint fromFile(Path checkpointPath) throws IOException {
-        if (checkpointPath == null) {
-            throw new IllegalArgumentException("Checkpoint path cannot be null");
-        }
-        Checkpoint checkpoint = objectMapper.readValue(checkpointPath.toFile(), Checkpoint.class);
-        return checkpoint;
-    }
 }

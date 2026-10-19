@@ -8,7 +8,10 @@ import dev.luhwani.model.Checkpoint;
 import dev.luhwani.model.TweetBatch;
 import dev.luhwani.model.TweetData;
 
-/** Converts bounded archive chunks into checkpoint-aware batches. */
+/**
+ * Converts bounded archive chunks into batches for request workers.
+ * Batches in the checkpoint are filtered out and discarded
+ */
 public final class TweetBatchFilter {
 
     /** Number of batches retained by each bounded pipeline window. */
@@ -19,6 +22,14 @@ public final class TweetBatchFilter {
     private final Checkpoint checkpoint;
     private final int batchSize;
 
+    /**
+     * Creates a filter for one bounded pipeline window.
+     *
+     * @param archiveBuffer producer state and queued tweets
+     * @param batchQueue    downstream batches and completion state
+     * @param checkpoint    batches evaluated on previous run
+     * @param batchSize     maximum tweets per output batch
+     */
     public TweetBatchFilter(TweetArchiveBuffer archiveBuffer, TweetBatchQueue batchQueue,
             Checkpoint checkpoint, int batchSize) {
         if (archiveBuffer == null || batchQueue == null || checkpoint == null) {
@@ -33,7 +44,19 @@ public final class TweetBatchFilter {
         this.batchSize = batchSize;
     }
 
-    /** Runs until the archive producer has finished and the archive buffer is empty. */
+    /**
+     * Runs until the archive producer has finished and the archive buffer is empty.
+     *
+     * <p>
+     * Successful checkpointed batches are consumed but not offered downstream.
+     * Producer or
+     * request-worker failures are copied to {@link TweetBatchQueue#failure}, and
+     * the queue is
+     * always marked finished before this method returns or throws.
+     * </p>
+     *
+     * @throws FatalException if interrupted or if downstream workers have failed
+     */
     public void run() throws FatalException {
         int nextBatchNumber = 1;
         try {
@@ -46,7 +69,7 @@ public final class TweetBatchFilter {
                 if (!tweets.isEmpty()) {
                     for (TweetBatch batch : createBatches(tweets, batchSize, nextBatchNumber)) {
                         if (!checkpoint.successfulBatches().contains(batch.batchNumber())) {
-                            while (!batchQueue.batches.offer(batch, 200, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                            while (!batchQueue.batches.offer(batch, 300, java.util.concurrent.TimeUnit.MILLISECONDS)) {
                                 if (batchQueue.failure != null) {
                                     throw new FatalException("Request executor failed", batchQueue.failure);
                                 }
@@ -69,11 +92,7 @@ public final class TweetBatchFilter {
         }
     }
 
-    public static List<TweetBatch> createBatches(List<TweetData> tweets, int batchSize) {
-        return createBatches(tweets, batchSize, 1);
-    }
-
-    static List<TweetBatch> createBatches(List<TweetData> tweets, int batchSize, int firstBatchNumber) {
+    private static List<TweetBatch> createBatches(List<TweetData> tweets, int batchSize, int firstBatchNumber) {
         if (batchSize <= 0) {
             throw new IllegalArgumentException("Batch size must be positive");
         }
@@ -89,11 +108,5 @@ public final class TweetBatchFilter {
             batches.add(new TweetBatch(batchNumber, tweets.subList(start, end)));
         }
         return List.copyOf(batches);
-    }
-
-    public static List<TweetBatch> filter(List<TweetBatch> tweetBatches, Checkpoint checkpoint) {
-        return tweetBatches.stream()
-                .filter(batch -> !checkpoint.successfulBatches().contains(batch.batchNumber()))
-                .toList();
     }
 }

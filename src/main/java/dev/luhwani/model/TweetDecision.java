@@ -5,7 +5,11 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 import dev.luhwani.ai.AiProvider;
 
-/** An {@link AiProvider}'s decision and explanation for one tweet. */
+/**
+ * An {@link AiProvider}'s decision and explanation for one tweet.
+ * If there is a change in the json property order, the
+ * same should be made in the {@link CheckpointResolver}
+ */
 @JsonPropertyOrder({ "tweet_id", "decision", "reason" })
 public record TweetDecision(
         @JsonProperty("tweet_id") String tweetId,
@@ -15,9 +19,9 @@ public record TweetDecision(
     /**
      * Creates a decision and converts the supplied tweet id to its X status URL.
      *
-     * @param tweetId raw X tweet id
+     * @param tweetId  raw X tweet id
      * @param decision keep or delete recommendation
-     * @param reason explanation for the recommendation
+     * @param reason   explanation for the recommendation
      * @throws IllegalArgumentException if any argument is missing
      */
     public TweetDecision(String tweetId, Decision decision, String reason) {

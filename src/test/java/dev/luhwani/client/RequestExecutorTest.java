@@ -1,15 +1,12 @@
 package dev.luhwani.client;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
@@ -26,178 +23,111 @@ import dev.luhwani.model.Decision;
 import dev.luhwani.model.TweetBatch;
 import dev.luhwani.model.TweetData;
 import dev.luhwani.model.TweetDecision;
+import dev.luhwani.tweetProcessing.TweetBatchQueue;
 
 class RequestExecutorTest {
 
     @Test
-    void processesBatchAndPublishesAnalysisResult() throws Exception {
-        TweetBatch batch = batch(1);
-        BlockingQueue<TweetBatch> batches = new LinkedBlockingQueue<>(List.of(batch));
-        BlockingQueue<AnalysisResult> results = new LinkedBlockingQueue<>();
-        CountDownLatch countDown = new CountDownLatch(batches.size());
-        AiProvider provider = providerReturning((ignored) -> resultFor(batch));
+    void evaluatesBatchAndPublishesResult() throws Exception {
+        AnalysisResult expected = result(1);
+        TweetBatchQueue batches = readyQueue(batch(1));
+        var results = new ArrayBlockingQueue<AnalysisResult>(1);
 
-        try (RequestExecutor executor = new RequestExecutor(1, batches, results, countDown, provider)) {
+        try (RequestExecutor executor = new RequestExecutor(1, batches, results, provider((ignored) -> expected))) {
             executor.start();
             executor.awaitCompletion();
+            assertTrue(executor.isFinished());
         }
 
-        assertEquals(resultFor(batch), results.take());
-        assertEquals(0, countDown.getCount());
+        assertEquals(expected, results.take());
     }
 
     @Test
-    void retriesRetryableFailureAndPublishesResult() throws Exception {
-        TweetBatch batch = batch(2);
-        AtomicInteger calls = new AtomicInteger();
-        AiProvider provider = providerReturning(ignored -> {
-            if (calls.getAndIncrement() == 0) {
-                throw new RetryableException("temporary failure");
+    void retriesTransientFailureBeforePublishingResult() throws Exception {
+        AnalysisResult expected = result(2);
+        AtomicInteger attempts = new AtomicInteger();
+        TweetBatchQueue batches = readyQueue(batch(2));
+        var results = new ArrayBlockingQueue<AnalysisResult>(1);
+        AiProvider provider = provider(ignored -> {
+            if (attempts.getAndIncrement() == 0) {
+                throw new RetryableException("temporary");
             }
-            return resultFor(batch);
+            return expected;
         });
-        BlockingQueue<AnalysisResult> results = new LinkedBlockingQueue<>();
 
-        try (RequestExecutor executor = new RequestExecutor(1,
-                new LinkedBlockingQueue<>(List.of(batch)), results, new CountDownLatch(1), provider)) {
+        try (RequestExecutor executor = new RequestExecutor(1, batches, results, provider)) {
             executor.start();
             executor.awaitCompletion();
         }
 
-        assertEquals(2, calls.get());
-        assertEquals(resultFor(batch), results.take());
+        assertEquals(2, attempts.get());
+        assertEquals(expected, results.take());
     }
 
     @Test
-    void stopsRetryingAfterMaximumAttemptsAndLeavesNoResult() throws Exception {
-        TweetBatch batch = batch(3);
-        AtomicInteger calls = new AtomicInteger();
-        AiProvider provider = providerReturning(ignored -> {
-            calls.incrementAndGet();
-            throw new RetryableException("temporary failure");
+    void recordsFatalProviderFailureAndReportsItOnCompletion() throws Exception {
+        TweetBatchQueue batches = readyQueue(batch(3));
+        var results = new ArrayBlockingQueue<AnalysisResult>(1);
+        AiProvider provider = provider(ignored -> {
+            throw new FatalException("fatal");
         });
-        BlockingQueue<AnalysisResult> results = new LinkedBlockingQueue<>();
 
-        try (RequestExecutor executor = new RequestExecutor(1,
-                new LinkedBlockingQueue<>(List.of(batch)), results, new CountDownLatch(1), provider)) {
+        try (RequestExecutor executor = new RequestExecutor(1, batches, results, provider)) {
             executor.start();
-            executor.awaitCompletion();
+            assertThrows(FatalException.class, executor::awaitCompletion);
         }
 
-        assertEquals(3, calls.get());
-        assertEquals(0, results.size());
+        assertTrue(batches.failure instanceof FatalException);
+        assertTrue(results.isEmpty());
     }
 
     @Test
-    void continuesWithNextBatchAfterBatchFailure() throws Exception {
-        TweetBatch failedBatch = batch(4);
-        TweetBatch successfulBatch = batch(5);
-        AtomicInteger calls = new AtomicInteger();
-        AiProvider provider = providerReturning(currentBatch -> {
-            if (calls.getAndIncrement() == 0) {
-                throw new BatchException("invalid response");
-            }
-            return resultFor(currentBatch);
+    void stopsAfterRepeatedIdenticalBatchFailures() throws Exception {
+        TweetBatchQueue batches = readyQueue(batch(4));
+        batches.batches.add(batch(5));
+        batches.batches.add(batch(6));
+        batches.batches.add(batch(7));
+        batches.batches.add(batch(8));
+        var results = new ArrayBlockingQueue<AnalysisResult>(1);
+        AiProvider provider = provider(ignored -> {
+            throw new BatchException("bad batch");
         });
-        BlockingQueue<AnalysisResult> results = new LinkedBlockingQueue<>();
 
-        try (RequestExecutor executor = new RequestExecutor(1,
-                new LinkedBlockingQueue<>(List.of(failedBatch, successfulBatch)), results,
-                new CountDownLatch(2), provider)) {
+        try (RequestExecutor executor = new RequestExecutor(1, batches, results, provider)) {
             executor.start();
-            executor.awaitCompletion();
+            assertThrows(FatalException.class, executor::awaitCompletion);
         }
 
-        assertEquals(2, calls.get());
-        assertEquals(resultFor(successfulBatch), results.take());
-        assertEquals(0, results.size());
+        assertTrue(results.isEmpty());
     }
 
-    @Test
-    void wrapsUnexpectedProviderFailureAsFatalException() throws Exception {
-        RuntimeException providerFailure = new RuntimeException("provider unavailable");
-        AiProvider provider = providerReturning(ignored -> {
-            throw providerFailure;
-        });
-        RequestExecutor executor = new RequestExecutor(1,
-                new LinkedBlockingQueue<>(List.of(batch(6))), new LinkedBlockingQueue<>(),
-                new CountDownLatch(1), provider);
-
-        try (executor) {
-            executor.start();
-            FatalException exception = assertThrows(FatalException.class, executor::awaitCompletion);
-
-            ExecutionException executionFailure = assertInstanceOf(ExecutionException.class, exception.getCause());
-            IllegalStateException cause = assertInstanceOf(IllegalStateException.class, executionFailure.getCause());
-            assertEquals(providerFailure, cause.getCause());
-        }
+    private static TweetBatchQueue readyQueue(TweetBatch batch) {
+        TweetBatchQueue queue = new TweetBatchQueue();
+        queue.batches.add(batch);
+        queue.finished = true;
+        return queue;
     }
 
-    @Test
-    void rejectsQueueAndLatchSizeMismatch() {
-        AiProvider provider = providerReturning(ignored -> resultFor(batch(7)));
-
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> new RequestExecutor(1, new LinkedBlockingQueue<>(), new LinkedBlockingQueue<>(),
-                        new CountDownLatch(1), provider));
-
-        assertEquals("tweetBatches not the same as countdown latch on executor init", exception.getMessage());
+    private static TweetBatch batch(int number) {
+        return new TweetBatch(number, List.of(new TweetData("1", "text")));
     }
 
-    @Test
-    void stopsAfterFiveConsecutiveBatchExceptions() throws Exception {
-        BlockingQueue<TweetBatch> batches = new LinkedBlockingQueue<>();
-        for (int i = 0; i < 10; i++) {
-            batches.add(new TweetBatch(i, List.of(new TweetData("id-" + i, "text-" + i))));
-        }
+    private static AnalysisResult result(int number) {
+        return new AnalysisResult(number, List.of(new TweetDecision("1", Decision.KEEP, "reason")));
+    }
 
-        AtomicInteger calls = new AtomicInteger();
-        CountDownLatch countDown = new CountDownLatch(10);
-        AiProvider provider = new AiProvider("unused", new Criteria(new ObjectMapper().createObjectNode()),
-                new ObjectMapper()) {
+    private static AiProvider provider(Analyzer analyzer) throws IOException {
+        return new AiProvider("key", new Criteria(new ObjectMapper().createObjectNode()), new ObjectMapper()) {
             @Override
-            public AnalysisResult analyze(TweetBatch batch) throws RetryableException, BatchException, FatalException {
-                calls.incrementAndGet();
-                throw new BatchException("same failure");
+            public AnalysisResult analyze(TweetBatch batch)
+                    throws RetryableException, BatchException, FatalException {
+                return analyzer.analyze(batch);
             }
         };
-
-        try (RequestExecutor executor = new RequestExecutor(1, batches, new LinkedBlockingQueue<>(), countDown,
-                provider)) {
-            executor.start();
-
-            FatalException ex = assertThrows(FatalException.class, executor::awaitCompletion);
-            assertEquals(5, calls.get(), "The executor should stop after five consecutive batch exceptions.");
-            assertEquals("Execution stopped as the same Exception is thrown repeatedly",
-                    ex.getCause().getCause().getMessage());
-        }
-    }
-
-    private static TweetBatch batch(int batchNumber) {
-        return new TweetBatch(batchNumber, List.of(new TweetData("id-" + batchNumber, "text-" + batchNumber)));
-    }
-
-    private static AnalysisResult resultFor(TweetBatch batch) {
-        return new AnalysisResult(batch.batchNumber(),
-                List.of(new TweetDecision(batch.tweets().getFirst().id(), Decision.KEEP, "valid")));
-    }
-
-    private static AiProvider providerReturning(ProviderBehavior behavior) {
-        try {
-            return new AiProvider("unused", new Criteria(new ObjectMapper().createObjectNode()), new ObjectMapper()) {
-                @Override
-                public AnalysisResult analyze(TweetBatch batch)
-                        throws RetryableException, BatchException, FatalException {
-                    return behavior.analyze(batch);
-                }
-            };
-        } catch (IOException exception) {
-            throw new AssertionError(exception);
-        }
     }
 
     @FunctionalInterface
-    private interface ProviderBehavior {
+    private interface Analyzer {
         AnalysisResult analyze(TweetBatch batch) throws RetryableException, BatchException, FatalException;
     }
 }
