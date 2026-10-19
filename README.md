@@ -9,7 +9,7 @@ The first project in [Ben X's backend engineering path](https://github.com/benx4
 - [Installations](#installations)
 - [Usage Instructions](#usage-instructions)
 - [Architecture](#architecture)
-- [Roadmap](#roadmap)
+- [Implementation Notes](#other-implementation-notes)
 
 ## Things Worth Noting
 
@@ -129,7 +129,7 @@ Here are the steps to filter the results of the csv in `Microsoft Excel`.
 
 - Tweets are processed in batches of 60 tweets by default. Use the optional `--batch-size` argument to choose a positive integer batch size.
 - Once an audit has started with a particular batch size, do not change it until the audit is complete. The tool uses the batch number to identify the audit checkpoint. If you need to change the batch size, delete the audit output, including `output.csv` and `checkpoint.json`, and start again.
-- Batch sizes below 50 are not recommended because they make the audit slower. The maximum practical batch size depends on your API key subscription and the evaluation model. For a free user using `gemini-3.5-flash-lite`, approximately 250-300 is technically the maximum before warning responses or other internal errors may occur.
+- Batch sizes below 50 are not recommended because they make the audit slower. The maximum practical batch size depends on your API key subscription, the average number of text in your tweets, and the evaluation model. For a free user using `gemini-3.5-flash-lite`, approximately 250-300 is technically the maximum before warning responses or other internal errors may occur.
 - The model can be selected with the optional `--model` argument. If provided, the value is passed directly to Gemini; an invalid model stops processing with the API's 404 error. Otherwise, the tool uses `gemini-3.5-flash-lite`.
 - Analysis results are created in `output/output.csv` by default, or in the output directory supplied on the command line.
 - If the tool closes for any reason, the CLI creates `checkpoint.json` in the same output folder.
@@ -141,3 +141,4 @@ Here are the steps to filter the results of the csv in `Microsoft Excel`.
 ```
 
 - When the tool is reloaded, it checks the checkpoint file, and filters out successful batches
+- If you want to stop the evaluation midway for any reason, click __CTRL + C__ on the terminal
