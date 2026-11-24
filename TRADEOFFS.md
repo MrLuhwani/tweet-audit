@@ -2,33 +2,30 @@
 
 ## Language Choice: Java
 
-I chose Java because it is the language I want to specialize in. Its type system catches many errors before runtime, and its concurrency APIs make it practical to coordinate several workers. The main downside is verbosity compared with languages such as Python.
+I chose Java because it is the language I want to specialize in. Compared to Go, it offers broader job opportunities in the ecosystems I am targeting. Compared to Python, its static type system catches many errors before runtime, and its concurrency tooling makes coordinating multiple worker threads practical. The main trade-off is verbosity.
 
 ## Architecture: Buffered Batch Processing with Checkpoints
 
-The former implementation converted your X archive to batches of tweets, and stored them in a queue. The client layer takes from that queue and sends for evaluation. If the user has a very large archive, that's a lot of load on the RAM.
+Rather than loading an entire X archive into memory at once, the pipeline streams data through bounded queues in two stages so RAM usage stays minimal.
 
-The new implementation uses a buffered pipeline system. Instead of loading the whole archive into memory, it is parsed in smaller buffers, which are bounded by a max window size. This ensures the RAM is not overloaded. This workflow uses 2 major pipelines:
+### Archive Loader to Batch Filter Stage
 
-### Archive Loader to Batch Filter Pipeline
+A loader streams the archive and publishes tweets in memory-bounded chunks to a queue (say queueA). A batch filter drains those chunks, groups tweets into fixed-size batches, and skips batches that have already been completed.
 
-The application streams the X archive through bounded queues: a loader publishes tweets in buffers that have a max amount of tweets, while a batch filter constantly drains from the queue, creates fixed-size batches from the tweets, and filters out batches that have been previously evaluated
+### Request Execution and Checkpointing Stage
 
-### Filter Pipeline to Request Executor
+Batches sent by the filter move into a thread-safe queue (say queueB) where concurrent workers send them to the AI provider. A single writer thread persists results to the CSV and updates the checkpoint JSON. The single thread write avoids multi-threaded write contention and partial-state errors.
 
-Batches produced by the filter are evaluated by request workers concurrently. The tweet batches are stored in a thread safe queue to prevent multi-threading issues. An output writer uses a single thread to write results from the request workers to the CSV and checkpoint JSON.
+The two bounded queues handle backpressure by pausing upstream producers when downstream queues fill up, trading extra coordination and async state complexity for protection against memory spikes and resource exhaustion.
 
-Backpressure pauses producers when either queue is full, which bounds memory use while preserving concurrency. The async workflow introduces shared completion, failure state between stages, and A LOT of complexity, but the tradeoff prevents system resources from being overwhelmed.
-
-With configurable batch sizes, you get the benefit of processing more tweets. This leads to an increased response time from the AI provider, giving you the benefit of being able to stay within your rate limit quota. The downside is that you spend more tokens per request.
-
-The checkpoint records only successfully written batches, then resumes with the remaining archive. This keeps processing simple, since failed batches and unattempted batches can be treated as unprocessed batches.
+Batch size is a direct trade-off: larger batches reduce request count and help stay within rate limits, at the cost of higher per-request latency and more tokens sent per call. Only successfully written batches are recorded in the checkpoint; any unattempted or failed batches remain unprocessed and can be retried cleanly on a subsequent run.
 
 ## Error Handling and Retries
 
-Provider errors are classified as retryable, batch-specific, or fatal. Retryable errors use bounded exponential backoff. If max retry is reached, that batch is classified as a failed batch. Fatal errors on the other hand, stop the whole evaluation pipeline.
+Provider failures are split into **retryable**, **batch-specific**, and **fatal** errors:
+- **Retryable errors** use bounded exponential backoff. If retries are exhausted, the batch is marked as failed so the rest of the run can continue.
+- **Fatal errors** (such as invalid api keys or configuration issues) halt the pipeline immediately rather than wasting retries.
 
 ## Output Format
 
-I wrote both tweets to be kept, and those to be deleted. Our tool just generates recommendations, but it is still the users decision to 
-make the final say if a tweet should be deleted or not. If they wish to filter, in the [README](README.md) I have written the steps out for them. This helps to keep the full audit trail for the user. Results are written as they arrive, after being processed by the AI, so there is no guarantee tweets are written in the same arrangement as your tweet archive.
+The output includes both tweets recommended for deletion and tweets recommended to keep. The tool only produces recommendations. The final decision to delete anything rests with the user, preserving a full audit trail. Steps for filtering the output are documented in the [README](README.md). Because results are written as worker responses finish, rather than in strict archive order, row ordering in the output CSV is not guaranteed to match the original archive.
